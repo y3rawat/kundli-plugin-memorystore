@@ -49,7 +49,9 @@ app.get('/setup', async (req, res) => {
     const html = renderSetupPage({
         userId,
         installationId,
-        existingConfig
+        existingConfig,
+        queryGeminiKey: req.query.gemini_key || '',
+        hasAiKey: req.query.has_ai_key === 'true' || Boolean(req.query.gemini_key)
     });
 
     res.setHeader('Content-Type', 'text/html');
