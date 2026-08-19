@@ -1,0 +1,10 @@
+node_modules
+.env
+.env.local
+.local_astrology_store.json
+*.log
+.DS_Store
+serviceAccountKey.json
+serviceAccount.json
+.vercel
+dist
