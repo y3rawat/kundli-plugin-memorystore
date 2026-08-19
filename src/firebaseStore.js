@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { initializeApp, cert, getApps, getApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import fs from 'fs';
@@ -5,9 +6,6 @@ import path from 'path';
 
 /**
  * Production Firebase Admin SDK Storage Adapter for MemoryStore Astrology Plugin
- * 
- * Uses Service Account credentials to bypass client security rules securely.
- * Rules in Firebase Console can remain 100% locked (`allow read, write: if false;`).
  */
 
 class FirebaseStore {
@@ -24,7 +22,7 @@ class FirebaseStore {
         try {
             let credential = null;
 
-            // 1. Try single JSON string or file path
+            // 1. Try single JSON string from env
             if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
                 const raw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY.trim();
                 let parsed = null;
@@ -36,7 +34,31 @@ class FirebaseStore {
                 if (parsed) credential = cert(parsed);
             }
 
-            // 2. Try individual environment variables
+            // 2. Try serviceAccountKey.json in current directory or root
+            if (!credential) {
+                const possibleKeyPaths = [
+                    path.resolve(process.cwd(), 'serviceAccountKey.json'),
+                    path.resolve(process.cwd(), 'serviceAccount.json'),
+                    path.resolve(process.cwd(), 'firebase-service-account.json')
+                ];
+
+                for (const p of possibleKeyPaths) {
+                    if (fs.existsSync(p)) {
+                        try {
+                            const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+                            if (parsed?.type === 'service_account' && parsed?.project_id) {
+                                credential = cert(parsed);
+                                console.log(`[FirebaseStore] Loaded credentials from file: ${path.basename(p)}`);
+                                break;
+                            }
+                        } catch (err) {
+                            console.warn(`[FirebaseStore] Could not parse ${p}:`, err.message);
+                        }
+                    }
+                }
+            }
+
+            // 3. Try individual environment variables
             if (!credential) {
                 const projectId = process.env.FIREBASE_PROJECT_ID || 'memorystore-kundli-plugin';
                 const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
