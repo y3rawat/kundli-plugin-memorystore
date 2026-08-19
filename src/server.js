@@ -221,8 +221,13 @@ async function processAstrologyVideoJob({ resultId, callbackUrl, memory, userCon
         profile = { dob: '1998-07-22', chart: defaultChart };
     }
 
-    // 2. Run Gemini AI Video Synthesis
-    const apiKey = userConfig?.gemini_api_key || profile.gemini_api_key || process.env.GEMINI_API_KEY;
+    // 2. Resolve User's Gemini AI Key (passed from MemoryStore App)
+    const apiKey = userConfig?.gemini_api_key
+        || userConfig?.ai_key
+        || memory?.gemini_api_key
+        || profile?.gemini_api_key
+        || process.env.GEMINI_API_KEY
+        || null;
 
     const analysisReport = await analyzeVideoWithKundli({
         videoData: memory || {},
