@@ -34,6 +34,82 @@ export const NAKSHATRAS = [
     'Purva Bhadrapada', 'Uttara Bhadrapada', 'Revati'
 ];
 
+export const POPULAR_CITIES = [
+    // India Major Metros & Capitals
+    { city: 'New Delhi', country: 'India', state: 'Delhi', lat: 28.6139, lon: 77.2090, tz: 5.5 },
+    { city: 'Mumbai', country: 'India', state: 'Maharashtra', lat: 19.0760, lon: 72.8777, tz: 5.5 },
+    { city: 'Bengaluru', country: 'India', state: 'Karnataka', lat: 12.9716, lon: 77.5946, tz: 5.5 },
+    { city: 'Kolkata', country: 'India', state: 'West Bengal', lat: 22.5726, lon: 88.3639, tz: 5.5 },
+    { city: 'Chennai', country: 'India', state: 'Tamil Nadu', lat: 13.0827, lon: 80.2707, tz: 5.5 },
+    { city: 'Hyderabad', country: 'India', state: 'Telangana', lat: 17.3850, lon: 78.4867, tz: 5.5 },
+    { city: 'Pune', country: 'India', state: 'Maharashtra', lat: 18.5204, lon: 73.8567, tz: 5.5 },
+    { city: 'Ahmedabad', country: 'India', state: 'Gujarat', lat: 23.0225, lon: 72.5714, tz: 5.5 },
+    { city: 'Jaipur', country: 'India', state: 'Rajasthan', lat: 26.9124, lon: 75.7873, tz: 5.5 },
+    { city: 'Lucknow', country: 'India', state: 'Uttar Pradesh', lat: 26.8467, lon: 80.9462, tz: 5.5 },
+    { city: 'Varanasi', country: 'India', state: 'Uttar Pradesh', lat: 25.3176, lon: 82.9739, tz: 5.5 },
+    { city: 'Patna', country: 'India', state: 'Bihar', lat: 25.5941, lon: 85.1376, tz: 5.5 },
+    { city: 'Chandigarh', country: 'India', state: 'Punjab/Haryana', lat: 30.7333, lon: 76.7794, tz: 5.5 },
+    { city: 'Indore', country: 'India', state: 'Madhya Pradesh', lat: 22.7196, lon: 75.8577, tz: 5.5 },
+    { city: 'Bhopal', country: 'India', state: 'Madhya Pradesh', lat: 23.2599, lon: 77.4126, tz: 5.5 },
+    { city: 'Surat', country: 'India', state: 'Gujarat', lat: 21.1702, lon: 72.8311, tz: 5.5 },
+    { city: 'Nagpur', country: 'India', state: 'Maharashtra', lat: 21.1458, lon: 79.0882, tz: 5.5 },
+    { city: 'Dehradun', country: 'India', state: 'Uttarakhand', lat: 30.3165, lon: 78.0322, tz: 5.5 },
+    { city: 'Noida', country: 'India', state: 'Uttar Pradesh', lat: 28.5355, lon: 77.3910, tz: 5.5 },
+    { city: 'Gurugram', country: 'India', state: 'Haryana', lat: 28.4595, lon: 77.0266, tz: 5.5 },
+    { city: 'Ballia', country: 'India', state: 'Uttar Pradesh', lat: 25.7584, lon: 84.1497, tz: 5.5 },
+    { city: 'Prayagraj (Allahabad)', country: 'India', state: 'Uttar Pradesh', lat: 25.4358, lon: 81.8463, tz: 5.5 },
+    { city: 'Gorakhpur', country: 'India', state: 'Uttar Pradesh', lat: 26.7606, lon: 83.3732, tz: 5.5 },
+    { city: 'Kanpur', country: 'India', state: 'Uttar Pradesh', lat: 26.4499, lon: 80.3319, tz: 5.5 },
+    { city: 'Agra', country: 'India', state: 'Uttar Pradesh', lat: 27.1767, lon: 78.0081, tz: 5.5 },
+    { city: 'Amritsar', country: 'India', state: 'Punjab', lat: 31.6340, lon: 74.8723, tz: 5.5 },
+    { city: 'Kochi', country: 'India', state: 'Kerala', lat: 9.9312, lon: 76.2673, tz: 5.5 },
+    { city: 'Thiruvananthapuram', country: 'India', state: 'Kerala', lat: 8.5241, lon: 76.9366, tz: 5.5 },
+    { city: 'Guwahati', country: 'India', state: 'Assam', lat: 26.1445, lon: 91.7362, tz: 5.5 },
+    { city: 'Bhubaneswar', country: 'India', state: 'Odisha', lat: 20.2961, lon: 85.8245, tz: 5.5 },
+    { city: 'Ranchi', country: 'India', state: 'Jharkhand', lat: 23.3441, lon: 85.3096, tz: 5.5 },
+    { city: 'Visakhapatnam', country: 'India', state: 'Andhra Pradesh', lat: 17.6868, lon: 83.2185, tz: 5.5 },
+    { city: 'Vadodara', country: 'India', state: 'Gujarat', lat: 22.3072, lon: 73.1812, tz: 5.5 },
+    { city: 'Coimbatore', country: 'India', state: 'Tamil Nadu', lat: 11.0168, lon: 76.9558, tz: 5.5 },
+    
+    // International Metros
+    { city: 'New York', country: 'United States', state: 'NY', lat: 40.7128, lon: -74.0060, tz: -5.0 },
+    { city: 'San Francisco', country: 'United States', state: 'CA', lat: 37.7749, lon: -122.4194, tz: -8.0 },
+    { city: 'Los Angeles', country: 'United States', state: 'CA', lat: 34.0522, lon: -118.2437, tz: -8.0 },
+    { city: 'Chicago', country: 'United States', state: 'IL', lat: 41.8781, lon: -87.6298, tz: -6.0 },
+    { city: 'London', country: 'United Kingdom', state: '', lat: 51.5074, lon: -0.1278, tz: 0.0 },
+    { city: 'Dubai', country: 'United Arab Emirates', state: '', lat: 25.2048, lon: 55.2708, tz: 4.0 },
+    { city: 'Singapore', country: 'Singapore', state: '', lat: 1.3521, lon: 103.8198, tz: 8.0 },
+    { city: 'Toronto', country: 'Canada', state: 'ON', lat: 43.6532, lon: -79.3832, tz: -5.0 },
+    { city: 'Vancouver', country: 'Canada', state: 'BC', lat: 49.2827, lon: -123.1207, tz: -8.0 },
+    { city: 'Sydney', country: 'Australia', state: 'NSW', lat: -33.8688, lon: 151.2093, tz: 10.0 },
+    { city: 'Melbourne', country: 'Australia', state: 'VIC', lat: -37.8136, lon: 144.9631, tz: 10.0 },
+    { city: 'Berlin', country: 'Germany', state: '', lat: 52.5200, lon: 13.4050, tz: 1.0 },
+    { city: 'Paris', country: 'France', state: '', lat: 48.8566, lon: 2.3522, tz: 1.0 },
+    { city: 'Tokyo', country: 'Japan', state: '', lat: 35.6762, lon: 139.6503, tz: 9.0 },
+    { city: 'Kathmandu', country: 'Nepal', state: '', lat: 27.7172, lon: 85.3240, tz: 5.75 },
+    { city: 'Colombo', country: 'Sri Lanka', state: '', lat: 6.9271, lon: 79.8612, tz: 5.5 },
+    { city: 'Dhaka', country: 'Bangladesh', state: '', lat: 23.8103, lon: 90.4125, tz: 6.0 }
+];
+
+export function getCityCoordinates(cityName) {
+    if (!cityName) return { lat: 28.6139, lon: 77.2090, tz: 5.5, placeName: 'New Delhi, India' };
+    const clean = cityName.toLowerCase().trim();
+    const match = POPULAR_CITIES.find(c =>
+        c.city.toLowerCase() === clean ||
+        `${c.city}, ${c.country}`.toLowerCase() === clean ||
+        clean.includes(c.city.toLowerCase())
+    );
+    if (match) {
+        return {
+            lat: match.lat,
+            lon: match.lon,
+            tz: match.tz,
+            placeName: `${match.city}, ${match.state ? match.state + ', ' : ''}${match.country}`
+        };
+    }
+    return { lat: 28.6139, lon: 77.2090, tz: 5.5, placeName: cityName };
+}
+
 const DEG2RAD = Math.PI / 180.0;
 const RAD2DEG = 180.0 / Math.PI;
 

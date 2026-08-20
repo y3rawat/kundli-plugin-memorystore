@@ -1,7 +1,8 @@
 import { ZODIAC_SIGNS } from '../chartCalculator.js';
 
 /**
- * Renders the Interactive Multi-Step Setup Page for MemoryStore iframe modal.
+ * Renders the Interactive Multi-Step Setup Page for MemoryStore iframe modal
+ * with live real-time global geocoding API for city search & coordinates.
  */
 export function renderSetupPage({ userId = '', installationId = '', existingConfig = {}, queryGeminiKey = '', hasAiKey = false }) {
     const signsOptions = ZODIAC_SIGNS.map(s => `<option value="${s.name}">${s.name} (${s.sanskrit})</option>`).join('');
@@ -118,6 +119,7 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
 
     .form-group {
       margin-bottom: 16px;
+      position: relative;
     }
     label {
       display: block;
@@ -144,6 +146,56 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
     }
     input:focus, select:focus {
       border-color: #a855f7;
+    }
+
+    /* Live City Autocomplete Dropdown */
+    .city-dropdown {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      background: #18181b;
+      border: 1px solid #3f3f46;
+      border-radius: 8px;
+      max-height: 220px;
+      overflow-y: auto;
+      z-index: 50;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.6);
+      display: none;
+    }
+    .city-option {
+      padding: 9px 12px;
+      cursor: pointer;
+      font-size: 12px;
+      border-bottom: 1px solid #27272a;
+      transition: background 0.15s;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .city-option:last-child {
+      border-bottom: none;
+    }
+    .city-option:hover {
+      background: #27272a;
+      color: #c084fc;
+    }
+    .city-coords {
+      font-size: 10px;
+      color: #71717a;
+    }
+
+    .selected-coords-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(168, 85, 247, 0.1);
+      border: 1px solid rgba(168, 85, 247, 0.3);
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 11px;
+      color: #c084fc;
+      margin-top: 6px;
     }
 
     .toggle-row {
@@ -368,7 +420,7 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
               </div>
             </div>
 
-            <div class="disclosure-section" style="margin-top: 8px; border-top: 1px solid #27272a; pt-2;">
+            <div class="disclosure-section" style="margin-top: 8px; border-top: 1px solid #27272a; padding-top: 8px;">
               <div style="font-size: 11px; font-weight: 600; color: #f87171; margin-bottom: 4px; text-transform: uppercase;">
                 ⚠️ What cannot be generated without time:
               </div>
@@ -399,19 +451,34 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
       <div id="stepCard2" class="step-card">
         <div class="transparency-banner">
           <div class="transparency-title">
-            <span>🌍</span> Step 2 of 3: Location & Moon Sign
+            <span>🌍</span> Step 2 of 3: City & Coordinates
           </div>
           <p class="transparency-text">
-            Geographic coordinates calibrate the local Sidereal horizon and cross-verify your Moon sign.
+            Type any city, town, or district. Our real-time global geocoding API automatically resolves exact latitude, longitude, and timezone.
           </p>
         </div>
 
         <div class="form-group">
-          <label for="placeName">City & Country of Birth</label>
-          <input type="text" id="placeName" placeholder="e.g. New Delhi, India" value="${existingConfig.place_name || 'New Delhi, India'}">
+          <label for="placeSearchInput">
+            City & Country of Birth <span style="color:#ef4444;">*</span>
+          </label>
+          <input type="text" id="placeSearchInput" placeholder="Start typing (e.g. Ballia, Varanasi, Mumbai, New York...)" autocomplete="off" value="${existingConfig.place_name || 'New Delhi, India'}">
+          
+          <div id="cityDropdown" class="city-dropdown"></div>
+
+          <!-- Hidden Coordinate Store -->
+          <input type="hidden" id="selectedPlaceName" value="${existingConfig.place_name || 'New Delhi, India'}">
+          <input type="hidden" id="latitude" value="${existingConfig.latitude || '28.6139'}">
+          <input type="hidden" id="longitude" value="${existingConfig.longitude || '77.2090'}">
+          <input type="hidden" id="timezoneOffset" value="${existingConfig.timezoneOffset || '5.5'}">
+
+          <div id="selectedCoordsPill" class="selected-coords-pill">
+            <span>📍</span>
+            <span id="coordsDisplay">28.61° N, 77.21° E (GMT+5:30)</span>
+          </div>
         </div>
 
-        <div class="form-group">
+        <div class="form-group" style="margin-top: 14px;">
           <label for="knownMoonSign">
             Known Moon Sign (Chandra Rashi)
             <span class="label-hint">(Optional — for cross-checking)</span>
@@ -491,6 +558,8 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
 
   <script>
     let currentStep = 1;
+    let searchDebounceTimer = null;
+
     const hasExactTimeToggle = document.getElementById('hasExactTime');
     const timeFieldContainer = document.getElementById('timeFieldContainer');
     const unknownTimeDisclosure = document.getElementById('unknownTimeDisclosure');
@@ -500,6 +569,15 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
     const successCard = document.getElementById('successCard');
     const badgesContainer = document.getElementById('chartSummaryBadges');
     const progressContainer = document.getElementById('progressContainer');
+
+    // City Elements
+    const placeSearchInput = document.getElementById('placeSearchInput');
+    const cityDropdown = document.getElementById('cityDropdown');
+    const selectedPlaceName = document.getElementById('selectedPlaceName');
+    const latitudeInput = document.getElementById('latitude');
+    const longitudeInput = document.getElementById('longitude');
+    const timezoneOffsetInput = document.getElementById('timezoneOffset');
+    const coordsDisplay = document.getElementById('coordsDisplay');
 
     function updateTimeFields() {
       if (hasExactTimeToggle.checked) {
@@ -513,6 +591,90 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
 
     hasExactTimeToggle.addEventListener('change', updateTimeFields);
     updateTimeFields();
+
+    // Live Geocoding Search via Global Geocoding API
+    placeSearchInput.addEventListener('input', () => {
+      const query = placeSearchInput.value.trim();
+      clearTimeout(searchDebounceTimer);
+
+      if (query.length < 2) {
+        cityDropdown.style.display = 'none';
+        return;
+      }
+
+      cityDropdown.innerHTML = '<div style="padding: 10px; font-size: 11px; color: #a1a1aa; text-align: center;">Searching global cities...</div>';
+      cityDropdown.style.display = 'block';
+
+      searchDebounceTimer = setTimeout(async () => {
+        try {
+          const res = await fetch(\`https://geocoding-api.open-meteo.com/v1/search?name=\${encodeURIComponent(query)}&count=7&language=en&format=json\`);
+          const data = await res.json();
+
+          if (!data.results || data.results.length === 0) {
+            cityDropdown.innerHTML = '<div style="padding: 10px; font-size: 11px; color: #71717a; text-align: center;">No cities found. Check spelling or use custom name.</div>';
+            return;
+          }
+
+          cityDropdown.innerHTML = data.results.map((item, idx) => {
+            const cityName = item.name || '';
+            const admin = item.admin1 || item.admin2 || '';
+            const country = item.country || '';
+            const lat = Number(item.latitude);
+            const lon = Number(item.longitude);
+            const tzName = item.timezone || 'Asia/Kolkata';
+
+            // Calculate timezone offset from longitude / timezone name
+            const tzOffset = estimateTzOffset(lon, tzName);
+
+            return \`
+              <div class="city-option" onclick="selectLiveCity('\${escapeJs(cityName)}', '\${escapeJs(admin)}', '\${escapeJs(country)}', \${lat}, \${lon}, \${tzOffset})">
+                <div>
+                  <strong>\${cityName}</strong>\${admin ? ', ' + admin : ''}, \${country}
+                </div>
+                <div class="city-coords">\${lat.toFixed(2)}°, \${lon.toFixed(2)}° (GMT\${tzOffset >= 0 ? '+' : ''}\${tzOffset})</div>
+              </div>
+            \`;
+          }).join('');
+
+        } catch (err) {
+          cityDropdown.innerHTML = '<div style="padding: 10px; font-size: 11px; color: #f87171; text-align: center;">Geocoding error. You can still proceed with current city.</div>';
+        }
+      }, 250);
+    });
+
+    function estimateTzOffset(lon, tzName) {
+      if (tzName === 'Asia/Kolkata' || tzName === 'Asia/Calcutta') return 5.5;
+      if (tzName === 'America/New_York') return -5;
+      if (tzName === 'America/Los_Angeles') return -8;
+      if (tzName === 'Europe/London') return 0;
+      if (tzName === 'Asia/Dubai') return 4;
+      if (tzName === 'Asia/Singapore') return 8;
+      if (tzName === 'Asia/Tokyo') return 9;
+      // Approximation: ~15 deg per hour
+      return Math.round((lon / 15) * 2) / 2;
+    }
+
+    function escapeJs(str) {
+      return (str || '').replace(/'/g, "\\\\'");
+    }
+
+    window.selectLiveCity = function(city, admin, country, lat, lon, tz) {
+      const fullPlace = \`\${city}\${admin ? ', ' + admin : ''}, \${country}\`;
+      placeSearchInput.value = fullPlace;
+      selectedPlaceName.value = fullPlace;
+      latitudeInput.value = lat;
+      longitudeInput.value = lon;
+      timezoneOffsetInput.value = tz;
+
+      coordsDisplay.innerText = \`\${Math.abs(lat).toFixed(2)}° \${lat >= 0 ? 'N' : 'S'}, \${Math.abs(lon).toFixed(2)}° \${lon >= 0 ? 'E' : 'W'} (GMT\${tz >= 0 ? '+' : ''}\${tz})\`;
+      cityDropdown.style.display = 'none';
+    };
+
+    document.addEventListener('click', (e) => {
+      if (!placeSearchInput.contains(e.target) && !cityDropdown.contains(e.target)) {
+        cityDropdown.style.display = 'none';
+      }
+    });
 
     function goToStep(step) {
       if (step === 2 && !document.getElementById('dob').value) {
@@ -544,7 +706,10 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
         dob: document.getElementById('dob').value,
         tob: hasExactTimeToggle.checked ? document.getElementById('tob').value : '12:00',
         hasExactTime: hasExactTimeToggle.checked,
-        placeName: document.getElementById('placeName').value,
+        placeName: selectedPlaceName.value || placeSearchInput.value || 'New Delhi, India',
+        latitude: parseFloat(latitudeInput.value) || 28.6139,
+        longitude: parseFloat(longitudeInput.value) || 77.2090,
+        timezoneOffsetHours: parseFloat(timezoneOffsetInput.value) || 5.5,
         knownMoonSign: document.getElementById('knownMoonSign').value || null,
         geminiApiKey: geminiInput ? (geminiInput.value.trim() || null) : null
       };

@@ -67,6 +67,9 @@ app.post('/api/setup-chart', async (req, res) => {
             tob,
             hasExactTime = true,
             placeName = 'New Delhi, India',
+            latitude,
+            longitude,
+            timezoneOffsetHours,
             knownMoonSign = null,
             geminiApiKey = null
         } = req.body;
@@ -75,11 +78,14 @@ app.post('/api/setup-chart', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Date of birth is required' });
         }
 
-        // Calculate Kundli
+        // Calculate Kundli with exact coordinates
         const chart = generateKundli({
             dob,
             tob: hasExactTime ? tob : '12:00',
             hasExactTime: Boolean(hasExactTime),
+            latitude: latitude !== undefined ? parseFloat(latitude) : undefined,
+            longitude: longitude !== undefined ? parseFloat(longitude) : undefined,
+            timezoneOffsetHours: timezoneOffsetHours !== undefined ? parseFloat(timezoneOffsetHours) : undefined,
             placeName,
             knownMoonSign
         });
