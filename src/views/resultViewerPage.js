@@ -34,9 +34,25 @@ export function renderResultViewerPage({ analysis, profile }) {
     const verdict = escapeHtml(analysis.verdict || 'Moderate Relevance');
     const takeaway = escapeHtml(analysis.actionableTakeaway || '');
 
+    const isChandraKundali = profile?.has_exact_time === false || profile?.chartMode === 'chandra_kundali' || profile?.chart?.chartMode === 'chandra_kundali';
+
     const lagna = escapeHtml(profile?.lagna?.sign || profile?.chart?.ascendant?.signName || 'Ascendant');
     const moonSign = escapeHtml(profile?.moon_sign?.sign || profile?.moonSign || 'Moon');
     const sunSign = escapeHtml(profile?.sun_sign?.sign || profile?.sunSign || 'Sun');
+
+    const chartStripHtml = isChandraKundali ? `
+      <span style="color:#c084fc;">Mode: <strong>Chandra Kundali (Moon Reference)</strong></span>
+      <span>•</span>
+      <span>Moon (Rashi): <strong>${moonSign}</strong></span>
+      <span>•</span>
+      <span>Sun: <strong>${sunSign}</strong></span>
+    ` : `
+      <span>Lagna: <strong>${lagna}</strong></span>
+      <span>•</span>
+      <span>Moon: <strong>${moonSign}</strong></span>
+      <span>•</span>
+      <span>Sun: <strong>${sunSign}</strong></span>
+    `;
 
     const claimsListHtml = videoClaims.map(c => `<li>${escapeHtml(c)}</li>`).join('');
     const remediesListHtml = remedies.map(r => `
@@ -123,6 +139,7 @@ export function renderResultViewerPage({ analysis, profile }) {
       font-size: 12px;
       color: #a1a1aa;
       margin-top: 6px;
+      flex-wrap: wrap;
     }
     .user-chart-strip span strong {
       color: #e4e4e7;
@@ -223,11 +240,7 @@ export function renderResultViewerPage({ analysis, profile }) {
       </div>
       <h1>${topic}</h1>
       <div class="user-chart-strip">
-        <span>Lagna: <strong>${lagna}</strong></span>
-        <span>•</span>
-        <span>Moon: <strong>${moonSign}</strong></span>
-        <span>•</span>
-        <span>Sun: <strong>${sunSign}</strong></span>
+        ${chartStripHtml}
       </div>
     </div>
 
@@ -254,7 +267,7 @@ export function renderResultViewerPage({ analysis, profile }) {
     <!-- Kundli Visual -->
     <div class="card">
       <div class="card-title">
-        <span>🪐</span> Natal Birth Chart (North Indian Kundli)
+        <span>🪐</span> ${isChandraKundali ? 'Chandra Kundali (Moon as 1st House Reference)' : 'Natal Birth Chart (North Indian Lagna Kundli)'}
       </div>
       <div class="kundli-container">
         ${svgKundli}
