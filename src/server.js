@@ -11,7 +11,7 @@ import { sendCallbackResult } from './callbackDispatcher.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const PLUGIN_SECRET = process.env.PLUGIN_SECRET || '';
+const PLUGIN_SECRET = process.env.MEMORYSTORE_PLUGIN_SECRET || process.env.PLUGIN_SECRET || '';
 
 function resolveBaseUrl(req) {
     if (process.env.APP_BASE_URL) {
