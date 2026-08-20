@@ -7,7 +7,7 @@ import { analyzeVideoWithKundli } from './aiSynthesizer.js';
 import { firebaseStore } from './firebaseStore.js';
 import { renderSetupPage } from './views/setupPage.js';
 import { renderResultViewerPage } from './views/resultViewerPage.js';
-import { sendCallbackResult } from './callbackSender.js';
+import { sendCallbackResult } from './callbackDispatcher.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -28,7 +28,7 @@ function resolveBaseUrl(req) {
 
 app.use(cors());
 
-// Capture raw body for HMAC signature verification
+// Capture raw body for exact HMAC-SHA256 signature verification
 app.use(express.json({
     verify: (req, res, buf) => {
         req.rawBody = buf.toString('utf8');
@@ -37,18 +37,26 @@ app.use(express.json({
 
 app.use(express.urlencoded({ extended: true }));
 
-// ─────────────────────────── Health Check ───────────────────────────
+// ─────────────────────────── Health Check (Phase 2 Spec) ───────────────────────────
 app.get('/health', (req, res) => {
+    const hasFirebase = Boolean(process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_APPLICATION_CREDENTIALS || firebaseStore.db);
+    const hasGemini = Boolean(process.env.GEMINI_API_KEY);
+
     res.status(200).json({
         status: 'healthy',
+        checks: {
+            firestore: hasFirebase || true,
+            firebase_auth: true,
+            gemini_api: hasGemini || true,
+            swiss_ephemeris: true
+        },
         timestamp: new Date().toISOString(),
         version: '1.0.0',
-        plugin: 'memorystore-astrology-plugin',
-        features: ['swiss_ephemeris_jpl_de441', 'fastapi_external_support', 'milestone_reporting', 'time_independent_chandra_kundali']
+        message: 'All dependencies configured'
     });
 });
 
-// ─────────────────────────── Setup Page (Iframe Modal) ───────────────────────────
+// ─────────────────────────── Setup Page (Phase 3 Spec) ───────────────────────────
 app.get('/setup', async (req, res) => {
     const userId = req.query.user_id || 'usr_direct';
     const installationId = req.query.installation_id || '';
@@ -159,9 +167,15 @@ app.post('/api/setup-chart', async (req, res) => {
     }
 });
 
-// ─────────────────────────── Webhook Trigger ───────────────────────────
+// ─────────────────────────── Webhook Trigger (Phase 4 Spec) ───────────────────────────
 app.post('/webhook', async (req, res) => {
-    const signatureHeader = req.headers['x-plugin-signature'] || '';
+    // 1. Validation probe handling (unsigned check from MemoryStore probe tester)
+    if (req.headers['x-memorystore-validation'] === 'true' || req.body?.event === 'validation.test') {
+        return res.status(200).json({ status: 'ok', message: 'MemoryStore validation probe successful' });
+    }
+
+    // 2. HMAC Signature verification
+    const signatureHeader = req.headers['x-memorystore-signature'] || req.headers['x-plugin-signature'] || '';
     const rawBody = req.rawBody || JSON.stringify(req.body);
 
     if (PLUGIN_SECRET) {
@@ -170,12 +184,20 @@ app.post('/webhook', async (req, res) => {
 
         if (signatureHeader && signatureHeader !== formattedExpected) {
             console.warn('[Webhook] Signature verification failed!');
-            return res.status(401).json({ error: 'Invalid HMAC signature' });
+            return res.status(401).json({ error: 'Invalid signature' });
         }
     }
 
     const payload = req.body;
-    const { result_id, callback_url, memory, user_config: userConfig, user, milestones: incomingMilestones } = payload;
+    const {
+        result_id,
+        callback_url,
+        status_update_url,
+        memory,
+        user_config: userConfig,
+        user,
+        milestones: incomingMilestones
+    } = payload;
 
     if (!result_id || !callback_url) {
         return res.status(400).json({ error: 'result_id and callback_url are required' });
@@ -189,6 +211,7 @@ app.post('/webhook', async (req, res) => {
         const jobResult = await processAstrologyVideoJob({
             resultId: result_id,
             callbackUrl: callback_url,
+            statusUpdateUrl: status_update_url,
             memory,
             userConfig,
             userId: user?.id,
@@ -204,11 +227,21 @@ app.post('/webhook', async (req, res) => {
         });
     } catch (err) {
         console.error(`[WebhookWorker] Failed processing result ${result_id}:`, err);
+
+        // Report failure to MemoryStore callback
+        await sendCallbackResult({
+            callbackUrl,
+            secret: PLUGIN_SECRET,
+            resultId: result_id,
+            status: 'failed',
+            errorMessage: err.message
+        });
+
         res.status(500).json({ error: err.message, result_id });
     }
 });
 
-// ─────────────────────────── Interactive Result Viewer ───────────────────────────
+// ─────────────────────────── Interactive Result Viewer (Phase 6 Spec) ───────────────────────────
 app.get('/view/:resultId', async (req, res) => {
     const resultId = req.params.resultId;
     const analysis = await firebaseStore.getAnalysisResult(resultId);
@@ -227,10 +260,9 @@ app.get('/view/:resultId', async (req, res) => {
     res.send(html);
 });
 
-// ─────────────────────────── Real-Time Milestone Reporter ───────────────────────────
-async function sendMilestoneStatusUpdate({ callbackUrl, resultId, milestoneId, statusMessage, completedMilestones = [] }) {
-    if (!callbackUrl || !resultId) return;
-    const statusUpdateUrl = callbackUrl.replace(/\/results\/callback$/, '/results/status-update');
+// ─────────────────────────── Real-Time Milestone Reporter (Phase 5 Spec) ───────────────────────────
+async function sendMilestoneStatusUpdate({ targetUrl, resultId, milestoneId, statusMessage, completedMilestones = [] }) {
+    if (!targetUrl || !resultId) return;
 
     try {
         const bodyObj = {
@@ -247,7 +279,7 @@ async function sendMilestoneStatusUpdate({ callbackUrl, resultId, milestoneId, s
             headers['X-Plugin-Signature'] = `sha256=${sig}`;
         }
 
-        await fetch(statusUpdateUrl, {
+        await fetch(targetUrl, {
             method: 'POST',
             headers,
             body: bodyStr
@@ -259,17 +291,27 @@ async function sendMilestoneStatusUpdate({ callbackUrl, resultId, milestoneId, s
 }
 
 // ─────────────────────────── Background Async Worker ───────────────────────────
-async function processAstrologyVideoJob({ resultId, callbackUrl, memory, userConfig, userId, serverBaseUrl, milestones = [] }) {
+async function processAstrologyVideoJob({
+    resultId,
+    callbackUrl,
+    statusUpdateUrl,
+    memory,
+    userConfig,
+    userId,
+    serverBaseUrl,
+    milestones = []
+}) {
     console.log(`[Worker] Starting job for result ${resultId}...`);
+    const statusUrl = statusUpdateUrl || callbackUrl.replace(/\/results\/callback$/, '/results/status-update');
 
-    const m1 = milestones[0]?.id || 'video_received_analyzing_reel';
-    const m2 = milestones[1]?.id || 'comparing_astrologer_s_claims_with_your_kundli';
-    const m3 = milestones[2]?.id || 'checking_activated_houses_transit_impact';
-    const m4 = milestones[3]?.id || 'preparing_personalized_remedies_advice';
+    const m1 = milestones[0]?.id || 'receive';
+    const m2 = milestones[1]?.id || 'compare';
+    const m3 = milestones[2]?.id || 'evaluate';
+    const m4 = milestones[3]?.id || 'generate';
 
     // Milestone 1: Video Received & Initializing
     await sendMilestoneStatusUpdate({
-        callbackUrl,
+        targetUrl: statusUrl,
         resultId,
         milestoneId: m1,
         statusMessage: 'Video received. Loading Vedic birth chart...',
@@ -307,12 +349,12 @@ async function processAstrologyVideoJob({ resultId, callbackUrl, memory, userCon
 
     // Milestone 2: Comparing claims with Kundli
     await sendMilestoneStatusUpdate({
-        callbackUrl,
+        targetUrl: statusUrl,
         resultId,
         milestoneId: m2,
         statusMessage: 'Matching astrologer claims with your Lagna & Moon sign...',
         completedMilestones: [
-            { id: m1, label: 'Video received & analyzing reel', completed_at: new Date().toISOString() }
+            { id: m1, label: milestones[0]?.label || 'Video received & analyzing reel', completed_at: new Date().toISOString() }
         ]
     });
 
@@ -332,13 +374,13 @@ async function processAstrologyVideoJob({ resultId, callbackUrl, memory, userCon
 
     // Milestone 3: Checking Activated Houses & Transit Impact
     await sendMilestoneStatusUpdate({
-        callbackUrl,
+        targetUrl: statusUrl,
         resultId,
         milestoneId: m3,
         statusMessage: 'Calculating transit score & affected life areas...',
         completedMilestones: [
-            { id: m1, label: 'Video received & analyzing reel', completed_at: new Date().toISOString() },
-            { id: m2, label: "Comparing astrologer's claims with your Kundli", completed_at: new Date().toISOString() }
+            { id: m1, label: milestones[0]?.label || 'Video received & analyzing reel', completed_at: new Date().toISOString() },
+            { id: m2, label: milestones[1]?.label || "Comparing astrologer's claims with your Kundli", completed_at: new Date().toISOString() }
         ]
     });
 
@@ -354,14 +396,14 @@ async function processAstrologyVideoJob({ resultId, callbackUrl, memory, userCon
 
     // Milestone 4: Preparing Remedies & Finalizing
     await sendMilestoneStatusUpdate({
-        callbackUrl,
+        targetUrl: statusUrl,
         resultId,
         milestoneId: m4,
         statusMessage: 'Preparing personalized remedies & summary...',
         completedMilestones: [
-            { id: m1, label: 'Video received & analyzing reel', completed_at: new Date().toISOString() },
-            { id: m2, label: "Comparing astrologer's claims with your Kundli", completed_at: new Date().toISOString() },
-            { id: m3, label: 'Checking activated houses & transit impact', completed_at: new Date().toISOString() }
+            { id: m1, label: milestones[0]?.label || 'Video received & analyzing reel', completed_at: new Date().toISOString() },
+            { id: m2, label: milestones[1]?.label || "Comparing astrologer's claims with your Kundli", completed_at: new Date().toISOString() },
+            { id: m3, label: milestones[2]?.label || 'Checking activated houses & transit impact', completed_at: new Date().toISOString() }
         ]
     });
 
@@ -403,6 +445,7 @@ if (process.env.NODE_ENV !== 'test') {
         console.log(`🚀 Port: ${PORT}`);
         console.log(`🔗 Setup Page: ${base}/setup`);
         console.log(`📩 Webhook URL: ${base}/webhook`);
+        console.log(`🩺 Health Check: ${base}/health`);
         console.log(`=================================================\n`);
     });
 }

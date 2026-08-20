@@ -9,15 +9,16 @@ export function signPayload(secret, payloadString) {
 }
 
 /**
- * Dispatches the completed analysis result back to MemoryStore's callback endpoint.
+ * Dispatches the completed or failed analysis result back to MemoryStore's callback endpoint.
  * 
  * @param {object} params
  * @param {string} params.callbackUrl The MemoryStore callback URL (e.g. https://api.memorystore.co.in/api/plugins/results/callback)
  * @param {string} params.secret      The plugin's shared auth secret
  * @param {string} params.resultId    The UUID of the plugin_results row
- * @param {string} params.resultUrl   The URL where the result viewer is hosted
- * @param {object} params.resultData  Structured JSON data of the astrology analysis
- * @param {string} [params.status='completed']
+ * @param {string} [params.resultUrl] The URL where the result viewer is hosted
+ * @param {object} [params.resultData] Structured JSON data of the astrology analysis
+ * @param {string} [params.status='completed'] 'completed' | 'failed'
+ * @param {string} [params.errorMessage] Error message if status is 'failed'
  * @returns {Promise<{success: boolean, status: number, data?: object, error?: string}>}
  */
 export async function sendCallbackResult({
@@ -26,19 +27,23 @@ export async function sendCallbackResult({
     resultId,
     resultUrl,
     resultData,
-    status = 'completed'
+    status = 'completed',
+    errorMessage = null
 }) {
     if (!callbackUrl || !resultId) {
         throw new Error('callbackUrl and resultId are required to send callback result');
     }
 
-    const payload = JSON.stringify({
+    const payloadObj = {
         result_id: resultId,
-        status,
-        result_url: resultUrl,
-        result_data: resultData
-    });
+        status
+    };
 
+    if (resultUrl) payloadObj.result_url = resultUrl;
+    if (resultData) payloadObj.result_data = resultData;
+    if (errorMessage) payloadObj.error_message = errorMessage;
+
+    const payload = JSON.stringify(payloadObj);
     const signature = signPayload(secret, payload);
     const headers = {
         'Content-Type': 'application/json',
