@@ -119,6 +119,7 @@ app.post('/api/setup-chart', async (req, res) => {
             moonSign: chart.moonSign,
             sunSign: chart.sunSign,
             placeName,
+            verification: chart.verification,
             chartSummary: chart.formattedSummary
         });
     } catch (err) {

@@ -2,7 +2,7 @@ import { ZODIAC_SIGNS } from '../chartCalculator.js';
 
 /**
  * Renders the Interactive Multi-Step Setup Page for MemoryStore iframe modal
- * with live real-time global geocoding API for city search & coordinates.
+ * with live real-time global geocoding API and intelligent Rashi / Timing discrepancy detection.
  */
 export function renderSetupPage({ userId = '', installationId = '', existingConfig = {}, queryGeminiKey = '', hasAiKey = false }) {
     const signsOptions = ZODIAC_SIGNS.map(s => `<option value="${s.name}">${s.name} (${s.sanskrit})</option>`).join('');
@@ -263,6 +263,50 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
       line-height: 1.4;
     }
 
+    /* Discrepancy Alert Modal */
+    .discrepancy-card {
+      display: none;
+      background: linear-gradient(135deg, rgba(234, 179, 8, 0.12) 0%, rgba(239, 68, 68, 0.12) 100%);
+      border: 1px solid rgba(234, 179, 8, 0.4);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 18px;
+      animation: fadeIn 0.3s ease;
+    }
+    .discrepancy-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #fbbf24;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .discrepancy-compare {
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 12px;
+      margin-bottom: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .discrepancy-note {
+      font-size: 12px;
+      color: #d4d4d8;
+      margin-bottom: 12px;
+      line-height: 1.4;
+    }
+    .discrepancy-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
     /* AI Key Status Badges */
     .ai-detected-card {
       background: rgba(34, 197, 94, 0.1);
@@ -362,6 +406,31 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
         <span id="stepLabel1" class="step-label active">1. Birth & Time</span>
         <span id="stepLabel2" class="step-label">2. City & Rashi</span>
         <span id="stepLabel3" class="step-label">3. AI Engine</span>
+      </div>
+    </div>
+
+    <!-- Discrepancy Conflict Resolution Banner -->
+    <div id="discrepancyCard" class="discrepancy-card">
+      <div class="discrepancy-title">
+        <span>⚠️</span> Astrological Rashi Discrepancy
+      </div>
+      <div class="discrepancy-compare">
+        <div>You selected: <strong id="statedSignText" style="color:#fbbf24;">Scorpio</strong></div>
+        <div>Astronomical Calculation: <strong id="calculatedSignText" style="color:#4ade80;">Gemini</strong></div>
+      </div>
+      <p class="discrepancy-note">
+        <strong>Why this happens:</strong> Western astrology uses tropical Sun signs, whereas Vedic Jyotish uses the Sidereal Moon sign (Rashi). If your birth time was off by several hours, the Moon may have transitioned signs.
+      </p>
+      <div class="discrepancy-actions">
+        <button type="button" class="btn-primary" onclick="resolveDiscrepancy('calculated')">
+          ✓ Use Astronomical Moon Sign (<span id="calcSignBtnLabel">Gemini</span>)
+        </button>
+        <button type="button" class="btn-secondary" onclick="resolveDiscrepancy('stated')">
+          Keep My Selected Sign (<span id="statedSignBtnLabel">Scorpio</span>)
+        </button>
+        <button type="button" class="btn-secondary" onclick="editBirthDetails()">
+          ✏️ Change Birth Date or Time
+        </button>
       </div>
     </div>
 
@@ -559,6 +628,7 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
   <script>
     let currentStep = 1;
     let searchDebounceTimer = null;
+    let pendingChartData = null;
 
     const hasExactTimeToggle = document.getElementById('hasExactTime');
     const timeFieldContainer = document.getElementById('timeFieldContainer');
@@ -569,6 +639,7 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
     const successCard = document.getElementById('successCard');
     const badgesContainer = document.getElementById('chartSummaryBadges');
     const progressContainer = document.getElementById('progressContainer');
+    const discrepancyCard = document.getElementById('discrepancyCard');
 
     // City Elements
     const placeSearchInput = document.getElementById('placeSearchInput');
@@ -615,15 +686,13 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
             return;
           }
 
-          cityDropdown.innerHTML = data.results.map((item, idx) => {
+          cityDropdown.innerHTML = data.results.map((item) => {
             const cityName = item.name || '';
             const admin = item.admin1 || item.admin2 || '';
             const country = item.country || '';
             const lat = Number(item.latitude);
             const lon = Number(item.longitude);
             const tzName = item.timezone || 'Asia/Kolkata';
-
-            // Calculate timezone offset from longitude / timezone name
             const tzOffset = estimateTzOffset(lon, tzName);
 
             return \`
@@ -650,7 +719,6 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
       if (tzName === 'Asia/Dubai') return 4;
       if (tzName === 'Asia/Singapore') return 8;
       if (tzName === 'Asia/Tokyo') return 9;
-      // Approximation: ~15 deg per hour
       return Math.round((lon / 15) * 2) / 2;
     }
 
@@ -694,6 +762,55 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
       progressFill.style.width = (step / 3 * 100) + '%';
     }
 
+    function editBirthDetails() {
+      discrepancyCard.style.display = 'none';
+      form.style.display = 'block';
+      goToStep(1);
+    }
+
+    window.resolveDiscrepancy = function(choice) {
+      if (!pendingChartData) return;
+      discrepancyCard.style.display = 'none';
+
+      const finalMoonSign = choice === 'calculated' 
+        ? pendingChartData.moonSign 
+        : (pendingChartData.verification?.statedMoonSign || pendingChartData.moonSign);
+
+      finalizeSuccess({
+        ...pendingChartData,
+        moonSign: finalMoonSign
+      });
+    };
+
+    function finalizeSuccess(data) {
+      badgesContainer.innerHTML = \`
+        <span class="badge">Lagna: \${data.lagna}</span>
+        <span class="badge">Moon: \${data.moonSign}</span>
+        <span class="badge">Sun: \${data.sunSign}</span>
+      \`;
+
+      form.style.display = 'none';
+      progressContainer.style.display = 'none';
+      discrepancyCard.style.display = 'none';
+      successCard.style.display = 'block';
+
+      const configToStore = {
+        profile_id: data.profileId,
+        dob: data.dob,
+        has_exact_time: data.hasExactTime,
+        moon_sign: data.moonSign,
+        sun_sign: data.sunSign,
+        place_name: data.placeName
+      };
+
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({
+          type: 'memorystore:plugin_config',
+          config: configToStore
+        }, '*');
+      }
+    }
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       submitBtn.disabled = true;
@@ -730,33 +847,22 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
           return;
         }
 
-        // Render badges
-        badgesContainer.innerHTML = \`
-          <span class="badge">Lagna: \${data.lagna}</span>
-          <span class="badge">Moon: \${data.moonSign}</span>
-          <span class="badge">Sun: \${data.sunSign}</span>
-        \`;
+        // Check for Rashi discrepancy
+        if (data.verification && data.verification.isMoonSignVerified === false) {
+          pendingChartData = data;
+          document.getElementById('statedSignText').innerText = data.verification.statedMoonSign || 'Selected';
+          document.getElementById('calculatedSignText').innerText = data.verification.calculatedMoonSign || 'Calculated';
+          document.getElementById('calcSignBtnLabel').innerText = data.verification.calculatedMoonSign || 'Calculated';
+          document.getElementById('statedSignBtnLabel').innerText = data.verification.statedMoonSign || 'Selected';
 
-        form.style.display = 'none';
-        progressContainer.style.display = 'none';
-        successCard.style.display = 'block';
-
-        // Post message to MemoryStore parent window
-        const configToStore = {
-          profile_id: data.profileId,
-          dob: data.dob,
-          has_exact_time: data.hasExactTime,
-          moon_sign: data.moonSign,
-          sun_sign: data.sunSign,
-          place_name: data.placeName
-        };
-
-        if (window.parent && window.parent !== window) {
-          window.parent.postMessage({
-            type: 'memorystore:plugin_config',
-            config: configToStore
-          }, '*');
+          form.style.display = 'none';
+          discrepancyCard.style.display = 'block';
+          submitBtn.disabled = false;
+          submitBtn.innerText = '🪐 Save & Generate Chart';
+          return;
         }
+
+        finalizeSuccess(data);
 
       } catch (err) {
         alert('Network error: ' + err.message);
