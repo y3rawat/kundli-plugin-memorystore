@@ -1,6 +1,6 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import crypto from 'crypto';
 
 import { generateKundli } from './chartCalculator.js';
@@ -10,12 +10,12 @@ import { sendCallbackResult } from './callbackDispatcher.js';
 import { renderSetupPage } from './views/setupPage.js';
 import { renderResultViewerPage } from './views/resultViewerPage.js';
 
-dotenv.config();
-
 const app = express();
 const PORT = process.env.PORT || 3456;
 const PLUGIN_SECRET = process.env.MEMORYSTORE_PLUGIN_SECRET || 'mst_plugin_secret_astrology_123';
-const SERVER_BASE_URL = process.env.SERVER_BASE_URL || `http://localhost:${PORT}`;
+
+const rawBaseUrl = process.env.SERVER_BASE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `http://localhost:${PORT}`);
+const SERVER_BASE_URL = rawBaseUrl.startsWith('http') ? rawBaseUrl.replace(/\/+$/, '') : `https://${rawBaseUrl.replace(/\/+$/, '')}`;
 
 // Middleware to capture raw body for HMAC signature validation
 app.use(express.json({
@@ -99,6 +99,9 @@ app.post('/api/setup-chart', async (req, res) => {
             tob: hasExactTime ? tob : null,
             has_exact_time: Boolean(hasExactTime),
             place_name: placeName,
+            latitude: chart.birthDetails.latitude,
+            longitude: chart.birthDetails.longitude,
+            timezone_offset: chart.birthDetails.timezoneOffsetHours,
             known_moon_sign: knownMoonSign,
             gemini_api_key: geminiApiKey,
             chartMode: chart.chartMode,
@@ -153,27 +156,26 @@ app.post('/webhook', async (req, res) => {
 
     console.log(`[Webhook] Received trigger for result ${result_id} | Memory: "${memory?.title || memory?.url}"`);
 
-    // 2. Respond 200 OK immediately
-    res.status(200).json({
-        status: 'accepted',
-        result_id,
-        message: 'Processing astrology video analysis asynchronously'
-    });
+    // Process job safely (awaited directly for serverless runtime reliability)
+    try {
+        const jobResult = await processAstrologyVideoJob({
+            resultId: result_id,
+            callbackUrl: callback_url,
+            memory,
+            userConfig,
+            userId: user?.id
+        });
 
-    // 3. Process asynchronously in background
-    setImmediate(async () => {
-        try {
-            await processAstrologyVideoJob({
-                resultId: result_id,
-                callbackUrl: callback_url,
-                memory,
-                userConfig,
-                userId: user?.id
-            });
-        } catch (err) {
-            console.error(`[WebhookWorker] Failed processing result ${result_id}:`, err);
-        }
-    });
+        res.status(200).json({
+            status: 'completed',
+            result_id,
+            result_url: jobResult?.resultUrl,
+            message: 'Astrology video analysis completed and dispatched'
+        });
+    } catch (err) {
+        console.error(`[WebhookWorker] Failed processing result ${result_id}:`, err);
+        res.status(500).json({ error: err.message, result_id });
+    }
 });
 
 // ─────────────────────────── Interactive Result Viewer ───────────────────────────
@@ -255,7 +257,7 @@ async function processAstrologyVideoJob({ resultId, callbackUrl, memory, userCon
     await firebaseStore.saveAnalysisResult(resultId, analysisRecord);
 
     // 4. Dispatch Callback to MemoryStore
-    const resultUrl = `${SERVER_BASE_URL.replace(/\/+$/, '')}/view/${resultId}`;
+    const resultUrl = `${SERVER_BASE_URL}/view/${resultId}`;
 
     const callbackResponse = await sendCallbackResult({
         callbackUrl,
@@ -273,6 +275,13 @@ async function processAstrologyVideoJob({ resultId, callbackUrl, memory, userCon
     });
 
     console.log(`[Worker] Completed result ${resultId} | Callback status: ${callbackResponse.status} | URL: ${resultUrl}`);
+
+    return {
+        resultId,
+        resultUrl,
+        analysisReport,
+        callbackStatus: callbackResponse.status
+    };
 }
 
 // ─────────────────────────── Server Start ───────────────────────────
