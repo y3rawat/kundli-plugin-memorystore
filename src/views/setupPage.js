@@ -495,7 +495,7 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
               </div>
               <div class="unavail-item">
                 <span class="unavail-icon">✕</span>
-                <span><strong>Ascendant (Lagna / 1st House):</strong> Lagna changes every 2 hours; cannot pinpoint rising house.</span>
+                <span><strong>Ascendant (Lagna / 1st House):</strong> Lagna changes every 2 hours; cannot pinpoint rising house without exact time.</span>
               </div>
               <div class="unavail-item">
                 <span class="unavail-icon">✕</span>
@@ -556,7 +556,6 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
             <option value="">Auto-calculate from date/time</option>
             ${signsOptions}
           </select>
-          <div id="inlineRashiFeedback" style="display:none; margin-top: 6px; font-size: 11px; padding: 6px 10px; border-radius: 6px;"></div>
         </div>
 
         <div class="btn-row">
@@ -785,11 +784,19 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
     };
 
     function finalizeSuccess(data) {
-      badgesContainer.innerHTML = \`
-        <span class="badge">Lagna: \${data.lagna}</span>
-        <span class="badge">Moon: \${data.moonSign}</span>
-        <span class="badge">Sun: \${data.sunSign}</span>
-      \`;
+      if (data.hasExactTime) {
+        badgesContainer.innerHTML = \`
+          <span class="badge">Lagna: \${data.lagna}</span>
+          <span class="badge">Moon: \${data.moonSign}</span>
+          <span class="badge">Sun: \${data.sunSign}</span>
+        \`;
+      } else {
+        badgesContainer.innerHTML = \`
+          <span class="badge" style="border-color: #a855f7; color: #c084fc;">Mode: Chandra Kundali</span>
+          <span class="badge">Moon (Rashi): \${data.moonSign}</span>
+          <span class="badge">Sun: \${data.sunSign}</span>
+        \`;
+      }
 
       form.style.display = 'none';
       progressContainer.style.display = 'none';
