@@ -79,7 +79,7 @@ app.post('/api/setup-chart', async (req, res) => {
         }
 
         // Calculate Kundli with exact coordinates
-        const chart = generateKundli({
+        const chart = await generateKundli({
             dob,
             tob: hasExactTime ? tob : '12:00',
             hasExactTime: Boolean(hasExactTime),
@@ -213,7 +213,7 @@ async function processAstrologyVideoJob({ resultId, callbackUrl, memory, userCon
     }
 
     if (!profile && userConfig?.dob) {
-        const chart = generateKundli({
+        const chart = await generateKundli({
             dob: userConfig.dob,
             tob: userConfig.tob || '12:00',
             hasExactTime: userConfig.has_exact_time !== false,
@@ -228,7 +228,7 @@ async function processAstrologyVideoJob({ resultId, callbackUrl, memory, userCon
 
     // Default chart if no profile yet
     if (!profile) {
-        const defaultChart = generateKundli({ dob: '1998-07-22', tob: '14:30' });
+        const defaultChart = await generateKundli({ dob: '1998-07-22', tob: '14:30' });
         profile = { dob: '1998-07-22', chart: defaultChart };
     }
 
