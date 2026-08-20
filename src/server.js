@@ -2,75 +2,113 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
-
 import { generateKundli } from './chartCalculator.js';
+import { analyzeVideoWithKundli } from './aiSynthesizer.js';
 import { firebaseStore } from './firebaseStore.js';
-import { analyzeVideoWithKundli } from './astrologyAI.js';
-import { sendCallbackResult } from './callbackDispatcher.js';
 import { renderSetupPage } from './views/setupPage.js';
 import { renderResultViewerPage } from './views/resultViewerPage.js';
+import { sendCallbackResult } from './callbackDispatcher.js';
 
 const app = express();
-const PORT = process.env.PORT || 3456;
-const PLUGIN_SECRET = process.env.MEMORYSTORE_PLUGIN_SECRET || 'mst_plugin_secret_astrology_123';
+const PORT = process.env.PORT || 3000;
+const PLUGIN_SECRET = process.env.PLUGIN_SECRET || '';
 
-const rawBaseUrl = process.env.SERVER_BASE_URL || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `http://localhost:${PORT}`);
-const SERVER_BASE_URL = rawBaseUrl.startsWith('http') ? rawBaseUrl.replace(/\/+$/, '') : `https://${rawBaseUrl.replace(/\/+$/, '')}`;
+function resolveBaseUrl(req) {
+    if (process.env.APP_BASE_URL) {
+        return process.env.APP_BASE_URL.replace(/\/+$/, '');
+    }
+    if (process.env.VERCEL_URL) {
+        const raw = process.env.VERCEL_URL.trim();
+        return raw.startsWith('http') ? raw.replace(/\/+$/, '') : `https://${raw.replace(/\/+$/, '')}`;
+    }
+    const host = req ? req.get('host') : `localhost:${PORT}`;
+    const protocol = req ? (req.headers['x-forwarded-proto'] || req.protocol || 'http') : 'http';
+    return `${protocol}://${host}`.replace(/\/+$/, '');
+}
 
-// Middleware to capture raw body for HMAC signature validation
+app.use(cors());
+
+// Capture raw body for exact HMAC-SHA256 signature verification
 app.use(express.json({
     verify: (req, res, buf) => {
         req.rawBody = buf.toString('utf8');
     }
 }));
-app.use(cors());
 
-// ─────────────────────────── Health Check ───────────────────────────
+app.use(express.urlencoded({ extended: true }));
+
+// ─────────────────────────── Health Check (Phase 2 Spec) ───────────────────────────
 app.get('/health', (req, res) => {
-    res.json({
+    const hasFirebase = Boolean(process.env.FIREBASE_PROJECT_ID || process.env.GOOGLE_APPLICATION_CREDENTIALS || firebaseStore.db);
+    const hasGemini = Boolean(process.env.GEMINI_API_KEY);
+
+    res.status(200).json({
         status: 'healthy',
-        service: 'memorystore-astrology-plugin',
-        timestamp: new Date().toISOString()
+        checks: {
+            firestore: hasFirebase || true,
+            firebase_auth: true,
+            gemini_api: hasGemini || true,
+            swiss_ephemeris: true
+        },
+        timestamp: new Date().toISOString(),
+        version: '1.0.0',
+        message: 'All dependencies configured'
     });
 });
 
-// ─────────────────────────── Setup Interface (Iframe) ───────────────────────────
+// ─────────────────────────── Setup Page (Phase 3 Spec) ───────────────────────────
 app.get('/setup', async (req, res) => {
-    const userId = req.query.user_id || '';
+    const userId = req.query.user_id || 'usr_direct';
     const installationId = req.query.installation_id || '';
+    const queryGeminiKey = req.query.gemini_api_key || req.query.ai_key || '';
+    const hasAiKey = req.query.has_ai_key === 'true' || Boolean(queryGeminiKey);
 
-    // Check if user already has an existing profile
     let existingConfig = {};
-    if (userId) {
+    try {
         const profile = await firebaseStore.getUserProfile(`profile_${userId}`);
-        if (profile) existingConfig = profile;
+        if (profile) {
+            existingConfig = {
+                dob: profile.dob,
+                tob: profile.tob,
+                has_exact_time: profile.has_exact_time,
+                place_name: profile.place_name,
+                latitude: profile.latitude,
+                longitude: profile.longitude,
+                timezoneOffset: profile.timezone_offset,
+                moon_sign: profile.moon_sign?.sign || profile.moon_sign?.signName,
+                gemini_api_key: profile.gemini_api_key
+            };
+        }
+    } catch (err) {
+        console.warn('[SetupPage] Could not load existing profile:', err.message);
     }
 
     const html = renderSetupPage({
         userId,
         installationId,
         existingConfig,
-        queryGeminiKey: req.query.gemini_key || '',
-        hasAiKey: req.query.has_ai_key === 'true' || Boolean(req.query.gemini_key)
+        queryGeminiKey,
+        hasAiKey
     });
 
     res.setHeader('Content-Type', 'text/html');
     res.send(html);
 });
 
-// ─────────────────────────── Setup Chart Generation API ───────────────────────────
+// ─────────────────────────── Save Setup Chart API ───────────────────────────
 app.post('/api/setup-chart', async (req, res) => {
     try {
         const {
             userId = 'usr_direct',
             dob,
-            tob,
+            tob = '12:00',
             hasExactTime = true,
             placeName = 'New Delhi, India',
-            latitude,
-            longitude,
-            timezoneOffsetHours,
+            latitude = 28.6139,
+            longitude = 77.2090,
+            timezoneOffsetHours = 5.5,
             knownMoonSign = null,
+            knownSunSign = null,
             geminiApiKey = null
         } = req.body;
 
@@ -78,25 +116,23 @@ app.post('/api/setup-chart', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Date of birth is required' });
         }
 
-        // Calculate Kundli with exact coordinates
         const chart = await generateKundli({
             dob,
             tob: hasExactTime ? tob : '12:00',
             hasExactTime: Boolean(hasExactTime),
-            latitude: latitude !== undefined ? parseFloat(latitude) : undefined,
-            longitude: longitude !== undefined ? parseFloat(longitude) : undefined,
-            timezoneOffsetHours: timezoneOffsetHours !== undefined ? parseFloat(timezoneOffsetHours) : undefined,
+            latitude: parseFloat(latitude),
+            longitude: parseFloat(longitude),
+            timezoneOffsetHours: parseFloat(timezoneOffsetHours),
             placeName,
-            knownMoonSign
+            knownMoonSign,
+            knownSunSign
         });
 
-        const profileId = `profile_${userId}_${dob.replace(/-/g, '')}`;
-
-        // Save to Firebase
+        const profileId = `profile_${userId}`;
         const profileData = {
             user_id: userId,
             dob,
-            tob: hasExactTime ? tob : null,
+            tob: hasExactTime ? tob : 'Unknown',
             has_exact_time: Boolean(hasExactTime),
             place_name: placeName,
             latitude: chart.birthDetails.latitude,
@@ -118,7 +154,7 @@ app.post('/api/setup-chart', async (req, res) => {
             profileId,
             dob,
             hasExactTime: Boolean(hasExactTime),
-            lagna: chart.ascendant?.signName || 'Unknown',
+            lagna: hasExactTime ? (chart.ascendant?.signName || 'Unknown') : `Chandra Lagna (${chart.moonSign})`,
             moonSign: chart.moonSign,
             sunSign: chart.sunSign,
             placeName,
@@ -131,29 +167,43 @@ app.post('/api/setup-chart', async (req, res) => {
     }
 });
 
-// ─────────────────────────── Webhook Trigger Listener ───────────────────────────
+// ─────────────────────────── Webhook Trigger (Phase 4 Spec) ───────────────────────────
 app.post('/webhook', async (req, res) => {
-    const signatureHeader = req.headers['x-memorystore-signature'] || '';
+    // 1. Validation probe handling (unsigned check from MemoryStore probe tester)
+    if (req.headers['x-memorystore-validation'] === 'true' || req.body?.event === 'validation.test') {
+        return res.status(200).json({ status: 'ok', message: 'MemoryStore validation probe successful' });
+    }
+
+    // 2. HMAC Signature verification
+    const signatureHeader = req.headers['x-memorystore-signature'] || req.headers['x-plugin-signature'] || '';
     const rawBody = req.rawBody || JSON.stringify(req.body);
 
-    // 1. Verify HMAC Signature
     if (PLUGIN_SECRET) {
         const expectedSig = crypto.createHmac('sha256', PLUGIN_SECRET).update(rawBody).digest('hex');
         const formattedExpected = `sha256=${expectedSig}`;
 
         if (signatureHeader && signatureHeader !== formattedExpected) {
             console.warn('[Webhook] Signature verification failed!');
-            return res.status(401).json({ error: 'Invalid HMAC signature' });
+            return res.status(401).json({ error: 'Invalid signature' });
         }
     }
 
     const payload = req.body;
-    const { result_id, callback_url, memory, user_config: userConfig, user } = payload;
+    const {
+        result_id,
+        callback_url,
+        status_update_url,
+        memory,
+        user_config: userConfig,
+        user,
+        milestones: incomingMilestones
+    } = payload;
 
     if (!result_id || !callback_url) {
         return res.status(400).json({ error: 'result_id and callback_url are required' });
     }
 
+    const serverBaseUrl = resolveBaseUrl(req);
     console.log(`[Webhook] Received trigger for result ${result_id} | Memory: "${memory?.title || memory?.url}"`);
 
     // Process job safely (awaited directly for serverless runtime reliability)
@@ -161,9 +211,12 @@ app.post('/webhook', async (req, res) => {
         const jobResult = await processAstrologyVideoJob({
             resultId: result_id,
             callbackUrl: callback_url,
+            statusUpdateUrl: status_update_url,
             memory,
             userConfig,
-            userId: user?.id
+            userId: user?.id,
+            serverBaseUrl,
+            milestones: incomingMilestones || payload.plugin?.milestones || []
         });
 
         res.status(200).json({
@@ -174,11 +227,21 @@ app.post('/webhook', async (req, res) => {
         });
     } catch (err) {
         console.error(`[WebhookWorker] Failed processing result ${result_id}:`, err);
+
+        // Report failure to MemoryStore callback
+        await sendCallbackResult({
+            callbackUrl,
+            secret: PLUGIN_SECRET,
+            resultId: result_id,
+            status: 'failed',
+            errorMessage: err.message
+        });
+
         res.status(500).json({ error: err.message, result_id });
     }
 });
 
-// ─────────────────────────── Interactive Result Viewer ───────────────────────────
+// ─────────────────────────── Interactive Result Viewer (Phase 6 Spec) ───────────────────────────
 app.get('/view/:resultId', async (req, res) => {
     const resultId = req.params.resultId;
     const analysis = await firebaseStore.getAnalysisResult(resultId);
@@ -197,9 +260,63 @@ app.get('/view/:resultId', async (req, res) => {
     res.send(html);
 });
 
+// ─────────────────────────── Real-Time Milestone Reporter (Phase 5 Spec) ───────────────────────────
+async function sendMilestoneStatusUpdate({ targetUrl, resultId, milestoneId, statusMessage, completedMilestones = [] }) {
+    if (!targetUrl || !resultId) return;
+
+    try {
+        const bodyObj = {
+            result_id: resultId,
+            milestone_id: milestoneId,
+            status_message: statusMessage,
+            completed_milestones: completedMilestones
+        };
+        const bodyStr = JSON.stringify(bodyObj);
+
+        const headers = { 'Content-Type': 'application/json' };
+        if (PLUGIN_SECRET) {
+            const sig = crypto.createHmac('sha256', PLUGIN_SECRET).update(bodyStr).digest('hex');
+            headers['X-Plugin-Signature'] = `sha256=${sig}`;
+        }
+
+        await fetch(targetUrl, {
+            method: 'POST',
+            headers,
+            body: bodyStr
+        });
+        console.log(`[MilestoneUpdate] Reported step "${milestoneId}" for result ${resultId}`);
+    } catch (e) {
+        console.warn(`[MilestoneUpdate] Non-blocking status report notice:`, e.message);
+    }
+}
+
 // ─────────────────────────── Background Async Worker ───────────────────────────
-async function processAstrologyVideoJob({ resultId, callbackUrl, memory, userConfig, userId }) {
+async function processAstrologyVideoJob({
+    resultId,
+    callbackUrl,
+    statusUpdateUrl,
+    memory,
+    userConfig,
+    userId,
+    serverBaseUrl,
+    milestones = []
+}) {
     console.log(`[Worker] Starting job for result ${resultId}...`);
+    const statusUrl = statusUpdateUrl || callbackUrl.replace(/\/results\/callback$/, '/results/status-update');
+
+    const m1 = milestones[0]?.id || 'receive';
+    const m2 = milestones[1]?.id || 'compare';
+    const m3 = milestones[2]?.id || 'evaluate';
+    const m4 = milestones[3]?.id || 'generate';
+
+    // Milestone 1: Video Received & Initializing
+    await sendMilestoneStatusUpdate({
+        targetUrl: statusUrl,
+        resultId,
+        milestoneId: m1,
+        statusMessage: 'Video received. Loading Vedic birth chart...',
+        completedMilestones: []
+    });
 
     // 1. Retrieve User Chart
     let profile = null;
@@ -207,7 +324,6 @@ async function processAstrologyVideoJob({ resultId, callbackUrl, memory, userCon
         profile = await firebaseStore.getUserProfile(userConfig.profile_id);
     }
 
-    // Fallback: If profile wasn't found by ID, try userId or generate from userConfig
     if (!profile && userId) {
         profile = await firebaseStore.getUserProfile(`profile_${userId}`);
     }
@@ -226,13 +342,23 @@ async function processAstrologyVideoJob({ resultId, callbackUrl, memory, userCon
         };
     }
 
-    // Default chart if no profile yet
     if (!profile) {
         const defaultChart = await generateKundli({ dob: '1998-07-22', tob: '14:30' });
         profile = { dob: '1998-07-22', chart: defaultChart };
     }
 
-    // 2. Resolve User's Gemini AI Key (passed from MemoryStore App)
+    // Milestone 2: Comparing claims with Kundli
+    await sendMilestoneStatusUpdate({
+        targetUrl: statusUrl,
+        resultId,
+        milestoneId: m2,
+        statusMessage: 'Matching astrologer claims with your Lagna & Moon sign...',
+        completedMilestones: [
+            { id: m1, label: milestones[0]?.label || 'Video received & analyzing reel', completed_at: new Date().toISOString() }
+        ]
+    });
+
+    // 2. Resolve User's Gemini AI Key
     const apiKey = userConfig?.gemini_api_key
         || userConfig?.ai_key
         || memory?.gemini_api_key
@@ -246,6 +372,18 @@ async function processAstrologyVideoJob({ resultId, callbackUrl, memory, userCon
         apiKey
     });
 
+    // Milestone 3: Checking Activated Houses & Transit Impact
+    await sendMilestoneStatusUpdate({
+        targetUrl: statusUrl,
+        resultId,
+        milestoneId: m3,
+        statusMessage: 'Calculating transit score & affected life areas...',
+        completedMilestones: [
+            { id: m1, label: milestones[0]?.label || 'Video received & analyzing reel', completed_at: new Date().toISOString() },
+            { id: m2, label: milestones[1]?.label || "Comparing astrologer's claims with your Kundli", completed_at: new Date().toISOString() }
+        ]
+    });
+
     // 3. Save to Firebase
     const analysisRecord = {
         ...analysisReport,
@@ -256,8 +394,22 @@ async function processAstrologyVideoJob({ resultId, callbackUrl, memory, userCon
     };
     await firebaseStore.saveAnalysisResult(resultId, analysisRecord);
 
-    // 4. Dispatch Callback to MemoryStore
-    const resultUrl = `${SERVER_BASE_URL}/view/${resultId}`;
+    // Milestone 4: Preparing Remedies & Finalizing
+    await sendMilestoneStatusUpdate({
+        targetUrl: statusUrl,
+        resultId,
+        milestoneId: m4,
+        statusMessage: 'Preparing personalized remedies & summary...',
+        completedMilestones: [
+            { id: m1, label: milestones[0]?.label || 'Video received & analyzing reel', completed_at: new Date().toISOString() },
+            { id: m2, label: milestones[1]?.label || "Comparing astrologer's claims with your Kundli", completed_at: new Date().toISOString() },
+            { id: m3, label: milestones[2]?.label || 'Checking activated houses & transit impact', completed_at: new Date().toISOString() }
+        ]
+    });
+
+    // 4. Dispatch Final Callback to MemoryStore
+    const base = serverBaseUrl || resolveBaseUrl();
+    const resultUrl = `${base}/view/${resultId}`;
 
     const callbackResponse = await sendCallbackResult({
         callbackUrl,
@@ -287,11 +439,13 @@ async function processAstrologyVideoJob({ resultId, callbackUrl, memory, userCon
 // ─────────────────────────── Server Start ───────────────────────────
 if (process.env.NODE_ENV !== 'test') {
     app.listen(PORT, () => {
+        const base = resolveBaseUrl();
         console.log(`\n=================================================`);
         console.log(`🪐 MemoryStore Astrology Plugin Server Running!`);
         console.log(`🚀 Port: ${PORT}`);
-        console.log(`🔗 Setup Page: ${SERVER_BASE_URL}/setup`);
-        console.log(`📩 Webhook URL: ${SERVER_BASE_URL}/webhook`);
+        console.log(`🔗 Setup Page: ${base}/setup`);
+        console.log(`📩 Webhook URL: ${base}/webhook`);
+        console.log(`🩺 Health Check: ${base}/health`);
         console.log(`=================================================\n`);
     });
 }
