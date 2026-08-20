@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
 import { generateKundli } from './chartCalculator.js';
-import { analyzeVideoWithKundli } from './aiSynthesizer.js';
+import { analyzeVideoWithKundli } from './astrologyAI.js';
 import { firebaseStore } from './firebaseStore.js';
 import { renderSetupPage } from './views/setupPage.js';
 import { renderResultViewerPage } from './views/resultViewerPage.js';
