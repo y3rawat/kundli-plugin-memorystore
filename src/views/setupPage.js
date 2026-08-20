@@ -266,8 +266,8 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
     /* Discrepancy Alert Modal */
     .discrepancy-card {
       display: none;
-      background: linear-gradient(135deg, rgba(234, 179, 8, 0.12) 0%, rgba(239, 68, 68, 0.12) 100%);
-      border: 1px solid rgba(234, 179, 8, 0.4);
+      background: linear-gradient(135deg, rgba(234, 179, 8, 0.15) 0%, rgba(239, 68, 68, 0.15) 100%);
+      border: 1px solid rgba(234, 179, 8, 0.5);
       border-radius: 12px;
       padding: 16px;
       margin-bottom: 18px;
@@ -293,12 +293,12 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
       margin-bottom: 10px;
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 6px;
     }
     .discrepancy-note {
       font-size: 12px;
       color: #d4d4d8;
-      margin-bottom: 12px;
+      margin-bottom: 14px;
       line-height: 1.4;
     }
     .discrepancy-actions {
@@ -412,18 +412,18 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
     <!-- Discrepancy Conflict Resolution Banner -->
     <div id="discrepancyCard" class="discrepancy-card">
       <div class="discrepancy-title">
-        <span>⚠️</span> Astrological Rashi Discrepancy
+        <span>⚠️</span> Astrological Rashi Discrepancy Detected
       </div>
       <div class="discrepancy-compare">
         <div>You selected: <strong id="statedSignText" style="color:#fbbf24;">Scorpio</strong></div>
-        <div>Astronomical Calculation: <strong id="calculatedSignText" style="color:#4ade80;">Gemini</strong></div>
+        <div>Astronomical calculation: <strong id="calculatedSignText" style="color:#4ade80;">Capricorn</strong></div>
       </div>
       <p class="discrepancy-note">
-        <strong>Why this happens:</strong> Western astrology uses tropical Sun signs, whereas Vedic Jyotish uses the Sidereal Moon sign (Rashi). If your birth time was off by several hours, the Moon may have transitioned signs.
+        <strong>Why this happens:</strong> Western astrology uses Tropical Sun signs, whereas Vedic Jyotish uses the Sidereal Moon sign (Rashi). If your birth time was off by a few hours, the Moon may have transitioned signs.
       </p>
       <div class="discrepancy-actions">
         <button type="button" class="btn-primary" onclick="resolveDiscrepancy('calculated')">
-          ✓ Use Astronomical Moon Sign (<span id="calcSignBtnLabel">Gemini</span>)
+          ✓ Use Astronomical Sign (<span id="calcSignBtnLabel">Capricorn</span>)
         </button>
         <button type="button" class="btn-secondary" onclick="resolveDiscrepancy('stated')">
           Keep My Selected Sign (<span id="statedSignBtnLabel">Scorpio</span>)
@@ -550,12 +550,13 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
         <div class="form-group" style="margin-top: 14px;">
           <label for="knownMoonSign">
             Known Moon Sign (Chandra Rashi)
-            <span class="label-hint">(Optional — for cross-checking)</span>
+            <span class="label-hint">(Optional — select to cross-check)</span>
           </label>
           <select id="knownMoonSign">
             <option value="">Auto-calculate from date/time</option>
             ${signsOptions}
           </select>
+          <div id="inlineRashiFeedback" style="display:none; margin-top: 6px; font-size: 11px; padding: 6px 10px; border-radius: 6px;"></div>
         </div>
 
         <div class="btn-row">
@@ -649,6 +650,7 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
     const longitudeInput = document.getElementById('longitude');
     const timezoneOffsetInput = document.getElementById('timezoneOffset');
     const coordsDisplay = document.getElementById('coordsDisplay');
+    const knownMoonSignSelect = document.getElementById('knownMoonSign');
 
     function updateTimeFields() {
       if (hasExactTimeToggle.checked) {
@@ -817,6 +819,8 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
       submitBtn.innerText = 'Calculating Chart & Saving...';
 
       const geminiInput = document.getElementById('geminiApiKey');
+      const selectedKnownSign = knownMoonSignSelect ? (knownMoonSignSelect.value || null) : null;
+
       const payload = {
         userId: document.getElementById('userId').value || 'usr_direct',
         installationId: document.getElementById('installationId').value || '',
@@ -827,7 +831,7 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
         latitude: parseFloat(latitudeInput.value) || 28.6139,
         longitude: parseFloat(longitudeInput.value) || 77.2090,
         timezoneOffsetHours: parseFloat(timezoneOffsetInput.value) || 5.5,
-        knownMoonSign: document.getElementById('knownMoonSign').value || null,
+        knownMoonSign: selectedKnownSign,
         geminiApiKey: geminiInput ? (geminiInput.value.trim() || null) : null
       };
 
@@ -848,12 +852,15 @@ export function renderSetupPage({ userId = '', installationId = '', existingConf
         }
 
         // Check for Rashi discrepancy
-        if (data.verification && data.verification.isMoonSignVerified === false) {
+        const statedSign = selectedKnownSign || data.verification?.statedMoonSign;
+        const calculatedSign = data.moonSign || data.verification?.calculatedMoonSign;
+
+        if (statedSign && calculatedSign && statedSign.toLowerCase() !== calculatedSign.toLowerCase()) {
           pendingChartData = data;
-          document.getElementById('statedSignText').innerText = data.verification.statedMoonSign || 'Selected';
-          document.getElementById('calculatedSignText').innerText = data.verification.calculatedMoonSign || 'Calculated';
-          document.getElementById('calcSignBtnLabel').innerText = data.verification.calculatedMoonSign || 'Calculated';
-          document.getElementById('statedSignBtnLabel').innerText = data.verification.statedMoonSign || 'Selected';
+          document.getElementById('statedSignText').innerText = statedSign;
+          document.getElementById('calculatedSignText').innerText = calculatedSign;
+          document.getElementById('calcSignBtnLabel').innerText = calculatedSign;
+          document.getElementById('statedSignBtnLabel').innerText = statedSign;
 
           form.style.display = 'none';
           discrepancyCard.style.display = 'block';

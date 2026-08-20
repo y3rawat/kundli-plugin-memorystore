@@ -1,6 +1,18 @@
 /**
- * Renders the Interactive Result Viewer Page for MemoryStore iframe modal.
+ * Renders the Interactive Result Viewer Page for MemoryStore iframe modal
+ * with full HTML escaping for security.
  */
+
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 export function renderResultViewerPage({ analysis, profile }) {
     if (!analysis) {
         return `<!DOCTYPE html>
@@ -13,32 +25,32 @@ export function renderResultViewerPage({ analysis, profile }) {
 </html>`;
     }
 
-    const topic = analysis.topic || 'Astrological Transit & Chart Analysis';
+    const topic = escapeHtml(analysis.topic || 'Astrological Transit & Chart Analysis');
     const videoClaims = Array.isArray(analysis.videoClaims) ? analysis.videoClaims : [];
-    const personalizedImpact = analysis.personalizedImpact || '';
+    const personalizedImpact = escapeHtml(analysis.personalizedImpact || '');
     const affectedHouses = Array.isArray(analysis.affectedHouses) ? analysis.affectedHouses : [];
     const remedies = Array.isArray(analysis.remedies) ? analysis.remedies : [];
-    const matchScore = analysis.matchScore || 85;
-    const verdict = analysis.verdict || 'Moderate Relevance';
-    const takeaway = analysis.actionableTakeaway || '';
+    const matchScore = Number(analysis.matchScore) || 85;
+    const verdict = escapeHtml(analysis.verdict || 'Moderate Relevance');
+    const takeaway = escapeHtml(analysis.actionableTakeaway || '');
 
-    const lagna = profile?.lagna?.sign || profile?.chart?.ascendant?.signName || 'Ascendant';
-    const moonSign = profile?.moon_sign?.sign || profile?.moonSign || 'Moon';
-    const sunSign = profile?.sun_sign?.sign || profile?.sunSign || 'Sun';
+    const lagna = escapeHtml(profile?.lagna?.sign || profile?.chart?.ascendant?.signName || 'Ascendant');
+    const moonSign = escapeHtml(profile?.moon_sign?.sign || profile?.moonSign || 'Moon');
+    const sunSign = escapeHtml(profile?.sun_sign?.sign || profile?.sunSign || 'Sun');
 
-    const claimsListHtml = videoClaims.map(c => `<li>${c}</li>`).join('');
+    const claimsListHtml = videoClaims.map(c => `<li>${escapeHtml(c)}</li>`).join('');
     const remediesListHtml = remedies.map(r => `
       <div class="remedy-item">
         <span class="remedy-icon">✦</span>
-        <span>${r}</span>
+        <span>${escapeHtml(r)}</span>
       </div>
     `).join('');
 
     const housesHtml = affectedHouses.map(h => `
       <div class="house-badge">
-        <span class="house-number">House ${h.house}</span>
-        <span class="house-theme">${h.theme || ''}</span>
-        <span class="house-effect">${h.effect || 'Active'}</span>
+        <span class="house-number">House ${escapeHtml(h.house)}</span>
+        <span class="house-theme">${escapeHtml(h.theme || '')}</span>
+        <span class="house-effect">${escapeHtml(h.effect || 'Active')}</span>
       </div>
     `).join('');
 
@@ -278,7 +290,7 @@ function generateNorthIndianKundliSvg(houses) {
     const getPlanetsInHouse = (num) => {
         const h = houses[num] || houses[String(num)];
         if (!h || !Array.isArray(h.planets) || h.planets.length === 0) return '';
-        return h.planets.join(' ');
+        return h.planets.map(p => escapeHtml(p)).join(' ');
     };
 
     const getSignNum = (num) => {
@@ -287,7 +299,7 @@ function generateNorthIndianKundliSvg(houses) {
     };
 
     return `
-    <svg viewBox="0 0 300 300" width="100%" max-width="320" style="max-width: 320px; background: #121214; border: 1px solid #27272a; border-radius: 8px;">
+    <svg viewBox="0 0 300 300" width="100%" style="max-width: 320px; background: #121214; border: 1px solid #27272a; border-radius: 8px;">
       <!-- Outer Square -->
       <rect x="10" y="10" width="280" height="280" fill="none" stroke="#71717a" stroke-width="1.5" />
       
