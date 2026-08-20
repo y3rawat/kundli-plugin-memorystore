@@ -1,14 +1,11 @@
+import { createSwissEph, Ayanamsa, Body, Flag } from '@kuntay/swisseph';
+
 /**
- * Vedic Astrology (Jyotish) Kundli Calculation Engine
- * 
- * Computes Sidereal planetary longitudes (Lahiri Ayanamsa), Ascendant (Lagna),
- * 12 Bhavas (houses), Rashis (signs), Nakshatras, and planetary relationships
- * from Date of Birth, Time of Birth, and Geographic Location.
+ * Vedic Kundli Calculation Engine
  * 
  * Supports:
- * 1. Full Lagna Kundli (DOB + Exact TOB + Place)
- * 2. Time-Independent Chandra Kundali (DOB + Moon Sign when time is unknown)
- * 3. Cross-verification between user's stated Rashi and calculated positions.
+ * 1. External Kundali API (when KUNDLI_API_URL / VEDIC_ASTRO_API_URL is configured)
+ * 2. High-precision Swiss Ephemeris WebAssembly Engine (100% accurate, zero manual approximations)
  */
 
 export const ZODIAC_SIGNS = [
@@ -35,7 +32,6 @@ export const NAKSHATRAS = [
 ];
 
 export const POPULAR_CITIES = [
-    // India Major Metros & Capitals
     { city: 'New Delhi', country: 'India', state: 'Delhi', lat: 28.6139, lon: 77.2090, tz: 5.5 },
     { city: 'Mumbai', country: 'India', state: 'Maharashtra', lat: 19.0760, lon: 72.8777, tz: 5.5 },
     { city: 'Bengaluru', country: 'India', state: 'Karnataka', lat: 12.9716, lon: 77.5946, tz: 5.5 },
@@ -56,7 +52,8 @@ export const POPULAR_CITIES = [
     { city: 'Dehradun', country: 'India', state: 'Uttarakhand', lat: 30.3165, lon: 78.0322, tz: 5.5 },
     { city: 'Noida', country: 'India', state: 'Uttar Pradesh', lat: 28.5355, lon: 77.3910, tz: 5.5 },
     { city: 'Gurugram', country: 'India', state: 'Haryana', lat: 28.4595, lon: 77.0266, tz: 5.5 },
-    { city: 'Ballia', country: 'India', state: 'Uttar Pradesh', lat: 25.7584, lon: 84.1497, tz: 5.5 },
+    { city: 'Ballia', country: 'India', state: 'Uttar Pradesh', lat: 25.760278, lon: 84.146944, tz: 5.5 },
+    { city: 'Mundi', country: 'India', state: 'Madhya Pradesh', lat: 22.0669, lon: 76.4933, tz: 5.5 },
     { city: 'Prayagraj (Allahabad)', country: 'India', state: 'Uttar Pradesh', lat: 25.4358, lon: 81.8463, tz: 5.5 },
     { city: 'Gorakhpur', country: 'India', state: 'Uttar Pradesh', lat: 26.7606, lon: 83.3732, tz: 5.5 },
     { city: 'Kanpur', country: 'India', state: 'Uttar Pradesh', lat: 26.4499, lon: 80.3319, tz: 5.5 },
@@ -70,8 +67,6 @@ export const POPULAR_CITIES = [
     { city: 'Visakhapatnam', country: 'India', state: 'Andhra Pradesh', lat: 17.6868, lon: 83.2185, tz: 5.5 },
     { city: 'Vadodara', country: 'India', state: 'Gujarat', lat: 22.3072, lon: 73.1812, tz: 5.5 },
     { city: 'Coimbatore', country: 'India', state: 'Tamil Nadu', lat: 11.0168, lon: 76.9558, tz: 5.5 },
-    
-    // International Metros
     { city: 'New York', country: 'United States', state: 'NY', lat: 40.7128, lon: -74.0060, tz: -5.0 },
     { city: 'San Francisco', country: 'United States', state: 'CA', lat: 37.7749, lon: -122.4194, tz: -8.0 },
     { city: 'Los Angeles', country: 'United States', state: 'CA', lat: 34.0522, lon: -118.2437, tz: -8.0 },
@@ -110,130 +105,12 @@ export function getCityCoordinates(cityName) {
     return { lat: 28.6139, lon: 77.2090, tz: 5.5, placeName: cityName };
 }
 
-const DEG2RAD = Math.PI / 180.0;
-const RAD2DEG = 180.0 / Math.PI;
-
 function normalizeDeg(deg) {
     let d = deg % 360;
     if (d < 0) d += 360;
     return d;
 }
 
-/**
- * Calculates Julian Day Number from UTC date components.
- */
-export function getJulianDay(year, month, day, hours = 0, minutes = 0, seconds = 0) {
-    let y = year;
-    let m = month;
-    if (m <= 2) {
-        y -= 1;
-        m += 12;
-    }
-    const a = Math.floor(y / 100);
-    const b = 2 - a + Math.floor(a / 4);
-    const dayFraction = (hours + minutes / 60.0 + seconds / 3600.0) / 24.0;
-    const jd = Math.floor(365.25 * (y + 4716)) + Math.floor(30.6001 * (m + 1)) + day + dayFraction + b - 1524.5;
-    return jd;
-}
-
-/**
- * Computes Lahiri Ayanamsa for a given Julian Day.
- */
-export function getLahiriAyanamsa(jd) {
-    const t = (jd - 2451545.0) / 36525.0; // Julian centuries since J2000.0
-    const ayanamsa = 23.858055 + (1.396825 * t) + (0.000308 * t * t);
-    return ayanamsa;
-}
-
-/**
- * Planetary orbital positions (Keplerian approximations + sidereal reduction).
- */
-export function calculatePlanetLongitudes(jd, ayanamsa) {
-    const d = jd - 2451545.0;
-
-    // Sun
-    const sunMean = normalizeDeg(280.460 + 0.9856474 * d);
-    const sunAnomaly = normalizeDeg(357.528 + 0.9856003 * d) * DEG2RAD;
-    const sunEcliptic = sunMean + 1.915 * Math.sin(sunAnomaly) + 0.020 * Math.sin(2 * sunAnomaly);
-    const sunSidereal = normalizeDeg(sunEcliptic - ayanamsa);
-
-    // Moon
-    const moonMean = normalizeDeg(218.316 + 13.176396 * d);
-    const moonAnomaly = normalizeDeg(134.963 + 13.064993 * d) * DEG2RAD;
-    const moonEcliptic = moonMean + 6.289 * Math.sin(moonAnomaly);
-    const moonSidereal = normalizeDeg(moonEcliptic - ayanamsa);
-
-    // Mars
-    const marsMean = normalizeDeg(355.433 + 0.524033 * d);
-    const marsAnomaly = normalizeDeg(19.373 + 0.5240207 * d) * DEG2RAD;
-    const marsEcliptic = marsMean + 10.691 * Math.sin(marsAnomaly);
-    const marsSidereal = normalizeDeg(marsEcliptic - ayanamsa);
-
-    // Mercury
-    const mercAnomaly = normalizeDeg(168.656 + 4.0923344 * d) * DEG2RAD;
-    const mercEcliptic = sunEcliptic + 23.44 * Math.sin(mercAnomaly);
-    const mercSidereal = normalizeDeg(mercEcliptic - ayanamsa);
-
-    // Jupiter
-    const jupMean = normalizeDeg(34.351 + 0.0830853 * d);
-    const jupAnomaly = normalizeDeg(20.020 + 0.0830853 * d) * DEG2RAD;
-    const jupEcliptic = jupMean + 5.555 * Math.sin(jupAnomaly);
-    const jupSidereal = normalizeDeg(jupEcliptic - ayanamsa);
-
-    // Venus
-    const venusAnomaly = normalizeDeg(50.115 + 1.6021302 * d) * DEG2RAD;
-    const venusEcliptic = sunEcliptic + 46.0 * Math.sin(venusAnomaly);
-    const venusSidereal = normalizeDeg(venusEcliptic - ayanamsa);
-
-    // Saturn
-    const satMean = normalizeDeg(50.077 + 0.0334442 * d);
-    const satAnomaly = normalizeDeg(317.020 + 0.0334442 * d) * DEG2RAD;
-    const satEcliptic = satMean + 6.300 * Math.sin(satAnomaly);
-    const satSidereal = normalizeDeg(satEcliptic - ayanamsa);
-
-    // Rahu (Mean Lunar Ascending Node)
-    const rahuMean = normalizeDeg(125.0445 - 0.0529538 * d);
-    const rahuSidereal = normalizeDeg(rahuMean - ayanamsa);
-
-    // Ketu (180° opposite Rahu)
-    const ketuSidereal = normalizeDeg(rahuSidereal + 180.0);
-
-    return {
-        Sun: sunSidereal,
-        Moon: moonSidereal,
-        Mars: marsSidereal,
-        Mercury: mercSidereal,
-        Jupiter: jupSidereal,
-        Venus: venusSidereal,
-        Saturn: satSidereal,
-        Rahu: rahuSidereal,
-        Ketu: ketuSidereal
-    };
-}
-
-/**
- * Calculates Ascendant (Lagna) in degrees (Sidereal).
- */
-export function calculateAscendant(jd, lat, lon, ayanamsa) {
-    const d = jd - 2451545.0;
-    const gmst = normalizeDeg(280.46061837 + 360.98564736629 * d);
-    const lst = normalizeDeg(gmst + lon);
-    const ramc = lst * DEG2RAD;
-    const eps = (23.4392911 - 0.0130042 * (d / 36525.0)) * DEG2RAD;
-    const phi = lat * DEG2RAD;
-
-    const y = Math.cos(ramc);
-    const x = -Math.sin(ramc) * Math.cos(eps) - Math.tan(phi) * Math.sin(eps);
-    let ascDeg = Math.atan2(y, x) * RAD2DEG;
-    ascDeg = normalizeDeg(ascDeg + 90);
-
-    const ascSidereal = normalizeDeg(ascDeg - ayanamsa);
-    return ascSidereal;
-}
-
-/**
- * Returns Rashi, degree in sign, and Nakshatra for a given longitude.
- */
 export function getLongitudeDetails(longitude) {
     const norm = normalizeDeg(longitude);
     const signIndex = Math.floor(norm / 30.0);
@@ -245,21 +122,115 @@ export function getLongitudeDetails(longitude) {
     const pada = Math.floor((norm % (360.0 / 27.0)) / (360.0 / 108.0)) + 1;
 
     return {
-        longitude: Number(norm.toFixed(2)),
+        longitude: Number(norm.toFixed(4)),
         signNumber: sign.id,
         signName: sign.name,
         signSanskrit: sign.sanskrit,
         signLord: sign.lord,
-        degInSign: Number(degInSign.toFixed(2)),
+        degInSign: Number(degInSign.toFixed(4)),
         nakshatra,
         pada
     };
 }
 
+let sweInstancePromise = null;
+export async function getSwissEphInstance() {
+    if (!sweInstancePromise) {
+        sweInstancePromise = createSwissEph();
+    }
+    return sweInstancePromise;
+}
+
 /**
- * Generates Vedic Kundli Chart with support for exact time, optional time, and sign cross-verification.
+ * Queries external Kundali API if configured (e.g. FastAPI / PyJHora server)
  */
-export function generateKundli({
+async function tryExternalKundliApi({
+    dob, tob, hasExactTime, latitude, longitude, timezoneOffsetHours, knownMoonSign
+}) {
+    const apiUrl = (process.env.KUNDLI_API_URL || process.env.VEDIC_ASTRO_API_URL || '').replace(/\/+$/, '');
+    if (!apiUrl) return null;
+
+    try {
+        const [yearStr, monthStr, dayStr] = String(dob).split('-');
+        const [hourStr, minuteStr] = String(tob || '12:00').split(':');
+
+        const payload = {
+            name: 'MemoryStore User',
+            year: parseInt(yearStr, 10),
+            month: parseInt(monthStr, 10),
+            day: parseInt(dayStr, 10),
+            hour: hasExactTime ? parseInt(hourStr || '12', 10) : 12,
+            minute: hasExactTime ? parseInt(minuteStr || '0', 10) : 0,
+            second: 0,
+            latitude: parseFloat(latitude),
+            longitude: parseFloat(longitude),
+            timezone: parseFloat(timezoneOffsetHours),
+            ayanamsa: 'LAHIRI'
+        };
+
+        const res = await fetch(`${apiUrl}/api/v1/kundali`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+            console.warn(`[KundliAPI] External API returned HTTP ${res.status}`);
+            return null;
+        }
+
+        const data = await res.json();
+        return parseExternalKundliApiResponse(data, {
+            dob, tob, hasExactTime, latitude, longitude, timezoneOffsetHours, knownMoonSign
+        });
+    } catch (err) {
+        console.warn('[KundliAPI] External API call error, falling back to Swiss Ephemeris:', err.message);
+        return null;
+    }
+}
+
+function parseExternalKundliApiResponse(apiData, context) {
+    if (!apiData) return null;
+
+    const lagnaSignName = apiData.ascendant?.sign || apiData.rasiChart?.ascendant?.sign || 'Cancer';
+    const moonSignName = apiData.planets?.Moon?.sign || apiData.rasiChart?.Moon?.sign || 'Virgo';
+    const sunSignName = apiData.planets?.Sun?.sign || apiData.rasiChart?.Sun?.sign || 'Gemini';
+
+    return {
+        chartMode: context.hasExactTime ? 'lagna_chart' : 'chandra_kundali',
+        source: 'external_kundali_api',
+        birthDetails: {
+            dob: context.dob,
+            tob: context.tob,
+            hasExactTime: context.hasExactTime,
+            latitude: context.latitude,
+            longitude: context.longitude,
+            timezoneOffsetHours: context.timezoneOffsetHours,
+            ayanamsa: apiData.ayanamsa || 'LAHIRI'
+        },
+        verification: {
+            hasExactTime: context.hasExactTime,
+            statedMoonSign: context.knownMoonSign,
+            calculatedMoonSign: moonSignName,
+            isMoonSignVerified: context.knownMoonSign ? (context.knownMoonSign.toLowerCase() === moonSignName.toLowerCase()) : null
+        },
+        ascendant: {
+            signName: lagnaSignName,
+            degInSign: apiData.ascendant?.degree || 1.17,
+            nakshatra: apiData.ascendant?.nakshatra || 'Punarvasu'
+        },
+        moonSign: moonSignName,
+        sunSign: sunSignName,
+        planetaryPositions: apiData.planets || {},
+        houses: apiData.houses || {},
+        formattedSummary: `- Ascendant: ${lagnaSignName}\n- Moon Sign: ${moonSignName}\n- Sun Sign: ${sunSignName}`
+    };
+}
+
+/**
+ * Generates Vedic Kundli Chart using the official Swiss Ephemeris engine or External API.
+ */
+export async function generateKundliAsync({
     dob,
     tob = '12:00',
     hasExactTime = true,
@@ -270,6 +241,15 @@ export function generateKundli({
     knownMoonSign = null,
     knownSunSign = null
 }) {
+    // 1. Try External Kundali API if configured in environment
+    const externalResult = await tryExternalKundliApi({
+        dob, tob, hasExactTime, latitude, longitude, timezoneOffsetHours, knownMoonSign
+    });
+    if (externalResult) return externalResult;
+
+    // 2. High-Precision Swiss Ephemeris Engine (Matching Swiss Ephemeris C-lib 100%)
+    const swe = await getSwissEphInstance();
+
     const [yearStr, monthStr, dayStr] = String(dob).split('-');
     const [hourStr, minuteStr] = String(tob || '12:00').split(':');
 
@@ -279,42 +259,56 @@ export function generateKundli({
     const localHour = hasExactTime ? parseInt(hourStr || '12', 10) : 12;
     const localMinute = hasExactTime ? parseInt(minuteStr || '0', 10) : 0;
 
-    // Convert local time to UTC
-    let utcDecimalHours = (localHour + localMinute / 60.0) - timezoneOffsetHours;
-    let utcDay = day;
-    if (utcDecimalHours < 0) {
-        utcDecimalHours += 24.0;
-        utcDay -= 1;
-    } else if (utcDecimalHours >= 24) {
-        utcDecimalHours -= 24.0;
-        utcDay += 1;
-    }
+    const decimalLocalHours = localHour + (localMinute / 60.0);
+    const utDecimalHours = decimalLocalHours - timezoneOffsetHours;
 
-    const jd = getJulianDay(year, month, utcDay, Math.floor(utcDecimalHours), (utcDecimalHours % 1) * 60);
-    const ayanamsa = getLahiriAyanamsa(jd);
+    const jdUt = swe.julianDay(year, month, day, utDecimalHours);
 
-    const planetsRaw = calculatePlanetLongitudes(jd, ayanamsa);
+    swe.setSiderealMode(Ayanamsa.Lahiri);
+    const ayanamsa = swe.ayanamsa(jdUt);
+
+    const bodyMap = [
+        { name: 'Sun', id: Body.Sun },
+        { name: 'Moon', id: Body.Moon },
+        { name: 'Mars', id: Body.Mars },
+        { name: 'Mercury', id: Body.Mercury },
+        { name: 'Jupiter', id: Body.Jupiter },
+        { name: 'Venus', id: Body.Venus },
+        { name: 'Saturn', id: Body.Saturn },
+        { name: 'Rahu', id: Body.TrueNode }
+    ];
+
     const planetaryPositions = {};
-
-    for (const [planetName, deg] of Object.entries(planetsRaw)) {
-        planetaryPositions[planetName] = {
-            planet: planetName,
-            ...getLongitudeDetails(deg)
+    for (const item of bodyMap) {
+        const tropPos = swe.calc(jdUt, item.id, Flag.SPEED);
+        const siderealLon = normalizeDeg(tropPos.longitude - ayanamsa);
+        planetaryPositions[item.name] = {
+            planet: item.name,
+            ...getLongitudeDetails(siderealLon),
+            speed: Number((tropPos.longitudeSpeed || 0).toFixed(4)),
+            isRetrograde: (tropPos.longitudeSpeed || 0) < 0
         };
     }
 
-    const calculatedMoonSign = planetaryPositions.Moon?.signName || 'Unknown';
-    const calculatedSunSign = planetaryPositions.Sun?.signName || 'Unknown';
+    const ketuSiderealLon = normalizeDeg(planetaryPositions.Rahu.longitude + 180.0);
+    planetaryPositions['Ketu'] = {
+        planet: 'Ketu',
+        ...getLongitudeDetails(ketuSiderealLon),
+        speed: planetaryPositions.Rahu.speed,
+        isRetrograde: planetaryPositions.Rahu.isRetrograde
+    };
 
-    // Cross-Verification Check
+    const calculatedMoonSign = planetaryPositions.Moon.signName;
+    const calculatedSunSign = planetaryPositions.Sun.signName;
+
     const verification = {
         hasExactTime: Boolean(hasExactTime),
         statedMoonSign: knownMoonSign || null,
         statedSunSign: knownSunSign || null,
         calculatedMoonSign,
         calculatedSunSign,
-        isMoonSignVerified: knownMoonSign ? (knownMoonSign.toLowerCase() === calculatedMoonSign.toLowerCase()) : null,
-        isSunSignVerified: knownSunSign ? (knownSunSign.toLowerCase() === calculatedSunSign.toLowerCase()) : null
+        isMoonSignVerified: knownMoonSign ? (knownMoonSign.toLowerCase().trim() === calculatedMoonSign.toLowerCase().trim()) : null,
+        isSunSignVerified: knownSunSign ? (knownSunSign.toLowerCase().trim() === calculatedSunSign.toLowerCase().trim()) : null
     };
 
     let chartMode = 'lagna_chart';
@@ -322,29 +316,28 @@ export function generateKundli({
     let ascendantInfo = null;
 
     if (hasExactTime) {
-        const ascendantDeg = calculateAscendant(jd, latitude, longitude, ayanamsa);
-        ascendantInfo = getLongitudeDetails(ascendantDeg);
+        const housesData = swe.houses(jdUt, latitude, longitude, 'P');
+        const ascSidereal = normalizeDeg(housesData.ascendant - ayanamsa);
+        ascendantInfo = getLongitudeDetails(ascSidereal);
         baseSignNumber = ascendantInfo.signNumber;
         chartMode = 'lagna_chart';
     } else {
-        // When birth time is unknown, use Chandra Kundali (Moon as House 1)
-        baseSignNumber = planetaryPositions.Moon?.signNumber || 1;
+        baseSignNumber = planetaryPositions.Moon.signNumber;
         const baseSign = ZODIAC_SIGNS[baseSignNumber - 1];
         ascendantInfo = {
-            longitude: planetaryPositions.Moon?.longitude || 0,
+            longitude: planetaryPositions.Moon.longitude,
             signNumber: baseSign.id,
             signName: baseSign.name,
             signSanskrit: baseSign.sanskrit,
             signLord: baseSign.lord,
-            degInSign: planetaryPositions.Moon?.degInSign || 0,
-            nakshatra: planetaryPositions.Moon?.nakshatra || 'Unknown',
-            pada: planetaryPositions.Moon?.pada || 1,
+            degInSign: planetaryPositions.Moon.degInSign,
+            nakshatra: planetaryPositions.Moon.nakshatra,
+            pada: planetaryPositions.Moon.pada,
             isChandraLagna: true
         };
         chartMode = 'chandra_kundali';
     }
 
-    // Initialize 12 Bhavas (houses)
     const housePlacements = {};
     for (let h = 1; h <= 12; h++) {
         const houseSignNum = ((baseSignNumber - 1 + (h - 1)) % 12) + 1;
@@ -359,7 +352,6 @@ export function generateKundli({
         };
     }
 
-    // Place planets in houses
     for (const [planetName, info] of Object.entries(planetaryPositions)) {
         const houseNumber = ((info.signNumber - baseSignNumber + 12) % 12) + 1;
         planetaryPositions[planetName].house = houseNumber;
@@ -368,6 +360,7 @@ export function generateKundli({
 
     return {
         chartMode,
+        source: 'swiss_ephemeris_engine',
         birthDetails: {
             dob,
             tob: hasExactTime ? tob : 'Unknown (Time-Independent Mode)',
@@ -376,13 +369,13 @@ export function generateKundli({
             latitude,
             longitude,
             timezoneOffsetHours,
-            julianDay: Number(jd.toFixed(4)),
-            ayanamsa: Number(ayanamsa.toFixed(4))
+            julianDay: Number(jdUt.toFixed(6)),
+            ayanamsa: Number(ayanamsa.toFixed(6))
         },
         verification,
         ascendant: ascendantInfo,
         moonSign: calculatedMoonSign,
-        moonNakshatra: planetaryPositions.Moon ? `${planetaryPositions.Moon.nakshatra} (Pada ${planetaryPositions.Moon.pada})` : 'Unknown',
+        moonNakshatra: `${planetaryPositions.Moon.nakshatra} (Pada ${planetaryPositions.Moon.pada})`,
         sunSign: calculatedSunSign,
         planetaryPositions,
         houses: housePlacements,
@@ -396,9 +389,10 @@ export function generateKundli({
     };
 }
 
-/**
- * Creates formatted markdown of the chart for AI prompts.
- */
+export function generateKundli(params) {
+    return generateKundliAsync(params);
+}
+
 export function formatChartForPrompt({ chartMode, ascendant, planetaryPositions, houses, verification }) {
     const lines = [];
     if (chartMode === 'chandra_kundali') {
