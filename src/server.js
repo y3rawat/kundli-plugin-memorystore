@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
 import { generateKundli } from './chartCalculator.js';
-import { analyzeVideoWithKundli } from './aiSynthesizer.js';
+import { analyzeVideoWithKundli } from './astrologyAI.js';
 import { firebaseStore } from './firebaseStore.js';
 import { renderSetupPage } from './views/setupPage.js';
 import { renderResultViewerPage } from './views/resultViewerPage.js';
@@ -11,7 +11,7 @@ import { sendCallbackResult } from './callbackDispatcher.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const PLUGIN_SECRET = process.env.PLUGIN_SECRET || '';
+const PLUGIN_SECRET = process.env.MEMORYSTORE_PLUGIN_SECRET || process.env.PLUGIN_SECRET || '';
 
 function resolveBaseUrl(req) {
     if (process.env.APP_BASE_URL) {
