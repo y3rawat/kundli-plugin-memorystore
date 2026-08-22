@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import crypto from 'crypto';
 import { generateKundli } from './chartCalculator.js';
-import { analyzeVideoWithKundli } from './astrologyAI.js';
+import { analyzeVideoWithKundli, chatAboutAnalysis } from './astrologyAI.js';
 import { firebaseStore } from './firebaseStore.js';
 import { renderSetupPage } from './views/setupPage.js';
 import { renderResultViewerPage } from './views/resultViewerPage.js';
@@ -247,7 +247,7 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// ─────────────────────────── Interactive Result Viewer (Phase 6 Spec) ───────────────────────────
+// ─────────────────────────── Interactive Result Viewer & Chat (Phase 6 Spec) ───────────────────────────
 app.get('/view/:resultId', async (req, res) => {
     const resultId = req.params.resultId;
     const analysis = await firebaseStore.getAnalysisResult(resultId);
@@ -259,11 +259,43 @@ app.get('/view/:resultId', async (req, res) => {
 
     const html = renderResultViewerPage({
         analysis,
-        profile
+        profile,
+        resultId
     });
 
     res.setHeader('Content-Type', 'text/html');
     res.send(html);
+});
+
+// Interactive AI Chat on Report
+app.post('/api/chat', async (req, res) => {
+    try {
+        const { resultId, message, conversationHistory = [] } = req.body;
+        if (!resultId || !message) {
+            return res.status(400).json({ error: 'resultId and message are required' });
+        }
+
+        const analysis = await firebaseStore.getAnalysisResult(resultId);
+        let profile = null;
+        if (analysis?.profile_id) {
+            profile = await firebaseStore.getUserProfile(analysis.profile_id);
+        }
+
+        const reply = await chatAboutAnalysis({
+            analysis,
+            profile,
+            userMessage: message,
+            conversationHistory
+        });
+
+        res.status(200).json({
+            success: true,
+            reply
+        });
+    } catch (err) {
+        console.error('[API Chat Error]', err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // ─────────────────────────── Real-Time Milestone Reporter (Phase 5 Spec) ───────────────────────────

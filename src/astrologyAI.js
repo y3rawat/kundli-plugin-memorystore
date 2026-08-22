@@ -165,3 +165,72 @@ function generateSynthesizedFallback({ videoTitle, videoTranscript, lagna, moonS
         analyzedAt: new Date().toISOString()
     };
 }
+
+export async function chatAboutAnalysis({
+    analysis,
+    profile,
+    userMessage,
+    conversationHistory = [],
+    apiKey = null
+}) {
+    const resolvedKey = (apiKey || process.env.GEMINI_API_KEY || '').trim();
+    const lagna = profile?.lagna?.sign || profile?.chart?.ascendant?.signName || 'Ascendant';
+    const moonSign = profile?.moon_sign?.sign || profile?.moonSign || 'Moon';
+    const sunSign = profile?.sun_sign?.sign || profile?.sunSign || 'Sun';
+
+    if (!resolvedKey) {
+        return `Based on your ${lagna} Lagna and ${moonSign} Moon, this planetary dynamic emphasizes focused execution. Regarding "${userMessage}": aligning with your natural ascendant strengths and avoiding impulsive changes during transition periods will bring steady clarity.`;
+    }
+
+    try {
+        const historyText = conversationHistory.map(m => `${m.role === 'user' ? 'User' : 'Astrologer'}: ${m.content}`).join('\n');
+        const prompt = `You are an expert Vedic Astrologer (Jyotish Acharya) providing personal astrological consultation inside MemoryStore.
+
+CONTEXT:
+User's Chart:
+- Lagna (Ascendant): ${lagna}
+- Moon Sign: ${moonSign}
+- Sun Sign: ${sunSign}
+
+Report Analysis Generated for User:
+- Topic: ${analysis?.topic || 'Astrology Transit'}
+- Verdict: ${analysis?.verdict || 'Moderate Relevance'}
+- Match Score: ${analysis?.matchScore || 80}%
+- Video Claims: ${(analysis?.videoClaims || []).join('; ')}
+- Personalized Impact: ${analysis?.personalizedImpact || ''}
+- Takeaway: ${analysis?.actionableTakeaway || ''}
+- Remedies: ${(analysis?.remedies || []).join('; ')}
+
+PREVIOUS CONVERSATION:
+${historyText || '(First message)'}
+
+USER'S CURRENT QUESTION / REQUEST:
+"${userMessage}"
+
+INSTRUCTIONS:
+1. Answer the user directly, concisely, and insightfully using their Vedic chart placements and the video's context.
+2. If they point out a correction, nuance, or ask for deeper remedies, explain clearly how their Lagna (${lagna}) and planetary positions interact with their specific situation.
+3. Keep the tone warm, empowering, authentic, and free of fatalism or superstition. Keep answers focused (2-4 paragraphs max).`;
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${resolvedKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                generationConfig: { temperature: 0.7, maxOutputTokens: 1000 }
+            })
+        });
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`Gemini API error (${response.status}): ${errText}`);
+        }
+
+        const data = await response.json();
+        const reply = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        return reply || `Based on your ${lagna} Lagna, focusing on disciplined routines and mindfulness will balance this transit favorably for you.`;
+    } catch (err) {
+        console.error('[AstrologyAI Chat Error]', err);
+        return `As an ${lagna} Lagna native, this transit strongly highlights steady action. In response to your question: "${userMessage}", keeping a balanced daily focus and consulting your 1st and 9th house themes will yield the best outcomes.`;
+    }
+}

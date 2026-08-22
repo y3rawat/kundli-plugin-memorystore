@@ -308,7 +308,134 @@ export function renderResultViewerPage({ analysis, profile }) {
       </div>
       ${remediesListHtml}
     </div>` : ''}
+
+    <!-- Interactive AI Astrologer Discussion Section -->
+    <div class="card" style="border: 1px solid rgba(168, 85, 247, 0.3); background: linear-gradient(180deg, #131316 0%, #0d0d10 100%);">
+      <div class="card-title" style="color: #c084fc;">
+        <span>💬</span> Discuss This Analysis with Astrology AI
+      </div>
+      <p style="font-size: 13px; color: #a1a1aa; line-height: 1.5; margin-bottom: 16px;">
+        Have questions about this video or how your <strong style="color:#f4f4f5;">${lagna} Lagna</strong> is impacted? Ask Gemini below for personalized insights.
+      </p>
+
+      <!-- Quick Prompt Chips -->
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;">
+        <button type="button" class="quick-chip" onclick="askQuickPrompt('How will this planetary transit affect my career and finances?')">💼 Career & Finances</button>
+        <button type="button" class="quick-chip" onclick="askQuickPrompt('Can you explain why House 1 and House 9 are activated?')">🪐 Explain Activated Houses</button>
+        <button type="button" class="quick-chip" onclick="askQuickPrompt('What specific daily remedies or mantras should I follow?')">✨ Personalized Remedies</button>
+      </div>
+
+      <!-- Chat Thread -->
+      <div id="chat-thread" style="display: flex; flex-direction: column; gap: 12px; max-height: 360px; overflow-y: auto; margin-bottom: 16px; padding: 4px;">
+        <div style="background: rgba(168, 85, 247, 0.08); border: 1px solid rgba(168, 85, 247, 0.2); padding: 12px 14px; border-radius: 12px; font-size: 13px; color: #e4e4e7; line-height: 1.5;">
+          🙏 Namaste! I have reviewed this video against your <strong>${lagna} Lagna</strong> and <strong>${moonSign} Moon</strong> chart. How can I assist you with this analysis?
+        </div>
+      </div>
+
+      <!-- Input Form -->
+      <form id="chat-form" onsubmit="handleSendMessage(event)" style="display: flex; gap: 8px;">
+        <input
+          type="text"
+          id="chat-input"
+          placeholder="Ask a question about this transit or your chart..."
+          style="flex: 1; background: #1c1c20; border: 1px solid #27272a; border-radius: 10px; padding: 10px 14px; color: #f4f4f5; font-size: 13px; outline: none; transition: border-color 0.2s;"
+          onfocus="this.style.borderColor='#a855f7'"
+          onblur="this.style.borderColor='#27272a'"
+        />
+        <button
+          type="submit"
+          id="chat-submit-btn"
+          style="background: linear-gradient(135deg, #a855f7, #7c3aed); border: none; border-radius: 10px; padding: 10px 18px; color: #ffffff; font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity 0.2s;"
+        >
+          Ask
+        </button>
+      </form>
+    </div>
   </div>
+
+  <style>
+    .quick-chip {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #d4d4d8;
+      border-radius: 20px;
+      padding: 6px 12px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .quick-chip:hover {
+      background: rgba(168, 85, 247, 0.15);
+      border-color: rgba(168, 85, 247, 0.3);
+      color: #c084fc;
+    }
+  </style>
+
+  <script>
+    const resultId = "${escapeHtml(resultId || '')}";
+    const conversationHistory = [];
+
+    function askQuickPrompt(text) {
+      const input = document.getElementById('chat-input');
+      input.value = text;
+      handleSendMessage();
+    }
+
+    async function handleSendMessage(e) {
+      if (e) e.preventDefault();
+      const input = document.getElementById('chat-input');
+      const submitBtn = document.getElementById('chat-submit-btn');
+      const thread = document.getElementById('chat-thread');
+      const text = (input.value || '').trim();
+      if (!text) return;
+
+      input.value = '';
+      submitBtn.disabled = true;
+      submitBtn.innerText = 'Thinking...';
+
+      // Append user bubble
+      const userBubble = document.createElement('div');
+      userBubble.style.cssText = 'background: #27272a; padding: 10px 14px; border-radius: 12px; font-size: 13px; color: #f4f4f5; line-height: 1.5; align-self: flex-end; max-width: 85%;';
+      userBubble.innerText = text;
+      thread.appendChild(userBubble);
+      thread.scrollTop = thread.scrollHeight;
+
+      conversationHistory.push({ role: 'user', content: text });
+
+      // Append loading indicator
+      const loadingBubble = document.createElement('div');
+      loadingBubble.style.cssText = 'background: rgba(168, 85, 247, 0.08); border: 1px solid rgba(168, 85, 247, 0.2); padding: 10px 14px; border-radius: 12px; font-size: 13px; color: #a1a1aa; line-height: 1.5; align-self: flex-start; max-width: 85%;';
+      loadingBubble.innerHTML = '<span style="display:inline-block; animation: pulse 1s infinite;">✦ Consulting chart & transit context...</span>';
+      thread.appendChild(loadingBubble);
+      thread.scrollTop = thread.scrollHeight;
+
+      try {
+        const resp = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            resultId,
+            message: text,
+            conversationHistory
+          })
+        });
+
+        const data = await resp.json();
+        const reply = data.reply || data.error || 'Could not generate answer at this time.';
+
+        loadingBubble.style.color = '#e4e4e7';
+        loadingBubble.innerHTML = reply.replace(/\\n/g, '<br/>');
+        conversationHistory.push({ role: 'assistant', content: reply });
+      } catch (err) {
+        loadingBubble.style.color = '#f87171';
+        loadingBubble.innerText = 'Connection error. Please try again.';
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerText = 'Ask';
+        thread.scrollTop = thread.scrollHeight;
+      }
+    }
+  </script>
 </body>
 </html>`;
 }
