@@ -320,6 +320,7 @@ async function processAstrologyVideoJob({
 
     // 1. Retrieve User Chart
     let profile = null;
+    let needsSetup = false;
     if (userConfig?.profile_id) {
         profile = await firebaseStore.getUserProfile(userConfig.profile_id);
     }
@@ -343,8 +344,9 @@ async function processAstrologyVideoJob({
     }
 
     if (!profile) {
+        needsSetup = true;
         const defaultChart = await generateKundli({ dob: '1998-07-22', tob: '14:30' });
-        profile = { dob: '1998-07-22', chart: defaultChart };
+        profile = { dob: '1998-07-22', chart: defaultChart, is_default: true };
     }
 
     // Milestone 2: Comparing claims with Kundli
