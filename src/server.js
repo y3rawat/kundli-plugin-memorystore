@@ -17,9 +17,8 @@ function resolveBaseUrl(req) {
     if (process.env.APP_BASE_URL) {
         return process.env.APP_BASE_URL.replace(/\/+$/, '');
     }
-    if (process.env.VERCEL_URL) {
-        const raw = process.env.VERCEL_URL.trim();
-        return raw.startsWith('http') ? raw.replace(/\/+$/, '') : `https://${raw.replace(/\/+$/, '')}`;
+    if (process.env.VERCEL) {
+        return 'https://kundli-plugin-memorystore.vercel.app';
     }
     const host = req ? req.get('host') : `localhost:${PORT}`;
     const protocol = req ? (req.headers['x-forwarded-proto'] || req.protocol || 'http') : 'http';
@@ -27,6 +26,13 @@ function resolveBaseUrl(req) {
 }
 
 app.use(cors());
+
+// Allow embedding in MemoryStore modals
+app.use((req, res, next) => {
+    res.setHeader('Content-Security-Policy', "frame-ancestors *;");
+    res.removeHeader('X-Frame-Options');
+    next();
+});
 
 // Capture raw body for exact HMAC-SHA256 signature verification
 app.use(express.json({
