@@ -12,7 +12,7 @@ class FirebaseStore {
     constructor() {
         this.isInitialized = false;
         this.db = null;
-        this.localStorePath = path.resolve(process.cwd(), '.local_astrology_store.json');
+        this.localStorePath = path.resolve(process.env.TMPDIR || '/tmp', '.local_astrology_store.json');
         this.localData = { profiles: {}, analyses: {} };
 
         this.init();
