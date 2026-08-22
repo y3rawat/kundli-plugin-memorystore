@@ -3,9 +3,26 @@
  * with full HTML escaping for security.
  */
 
+function decodeHtmlEntities(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&#x([0-9a-f]+);/gi, (_, code) => {
+            try { return String.fromCodePoint(parseInt(code, 16)); } catch { return ''; }
+        })
+        .replace(/&#([0-9]+);/g, (_, code) => {
+            try { return String.fromCodePoint(parseInt(code, 10)); } catch { return ''; }
+        })
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#039;/g, "'");
+}
+
 function escapeHtml(str) {
     if (str === null || str === undefined) return '';
-    return String(str)
+    const decoded = decodeHtmlEntities(String(str));
+    return decoded
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
