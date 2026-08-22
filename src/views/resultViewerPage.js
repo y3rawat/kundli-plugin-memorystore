@@ -30,7 +30,7 @@ function escapeHtml(str) {
         .replace(/'/g, '&#039;');
 }
 
-export function renderResultViewerPage({ analysis, profile }) {
+export function renderResultViewerPage({ analysis, profile, resultId }) {
     if (!analysis) {
         return `<!DOCTYPE html>
 <html>
